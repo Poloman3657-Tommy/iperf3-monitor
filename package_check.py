@@ -1,0 +1,90 @@
+"""Bounded loopback diagnostic for a relocated frozen app; no external server access."""
+import json
+import os
+from pathlib import Path
+import socket
+import subprocess
+import sys
+import time
+import traceback
+
+
+def check_package(report_path: str) -> int:
+    report = Path(report_path).resolve()
+    report.parent.mkdir(parents=True, exist_ok=True)
+    root = app = server = None
+    result = {'passed': False, 'frozen': bool(getattr(sys, 'frozen', False)),
+              'executable': sys.executable}
+    try:
+        import tkinter as tk
+        import matplotlib
+        from gui import MonitorApp
+        from gui_runner import app_directory, find_iperf
+
+        executable = find_iperf()
+        if not executable:
+            raise RuntimeError('Bundled iperf3 was not found')
+        result.update(iperf=executable, matplotlib=matplotlib.__version__,
+                      matplotlib_path=matplotlib.__file__, app_directory=str(app_directory()))
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0))
+            port = probe.getsockname()[1]
+        server = subprocess.Popen([executable, '-s', '-1', '-B', '127.0.0.1', '-p', str(port)],
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                  creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        time.sleep(0.5)
+        if server.poll() is not None:
+            raise RuntimeError('Bundled iperf3 server could not start')
+        root = tk.Tk()
+        root.withdraw()
+        result['tcl_library'] = root.tk.eval('info library')
+        errors = []
+        root.report_callback_exception = lambda kind, value, tb: errors.append(str(value))
+        app = MonitorApp(root)
+        # Use the same buttons and event loop as the normal app, in continuous download mode.
+        for key, value in {'server': '127.0.0.1', 'port': port, 'duration': 0, 'warmup': 1,
+                           'direction': '下載：server → 本機', 'output': report.parent / 'run-data'}.items():
+            app.vars[key].set(str(value))
+        app.start_button.invoke()
+        if not app.active:
+            raise RuntimeError(app.status.get())
+        deadline, pumps, stopped = time.monotonic() + 25, 0, False
+        while app.active and time.monotonic() < deadline:
+            root.update()
+            pumps += 1
+            if len(app.samples) >= 4 and not stopped:
+                app.stop_button.invoke()
+                stopped = True
+            if errors:
+                raise RuntimeError('; '.join(errors))
+            time.sleep(0.01)
+        if app.active:
+            raise TimeoutError('Package loopback diagnostic timed out')
+        outcome = app.last_outcome
+        if outcome is None or outcome.summary['verdict'] != 'INTERRUPTED' or len(outcome.samples) < 4:
+            raise RuntimeError(f'Unexpected measurement result: {outcome}')
+        if (outcome.output / 'throughput.png').stat().st_size < 10000:
+            raise RuntimeError('PNG report was not generated correctly')
+        result.update(passed=True, samples=len(outcome.samples), ui_event_pumps=pumps,
+                      output=str(outcome.output), summary=outcome.summary)
+        return_code = 0
+    except Exception:
+        result['error'] = traceback.format_exc()
+        return_code = 2
+    finally:
+        if app is not None and not app.closed:
+            app.stop()
+            deadline = time.monotonic() + 8
+            while app.active and time.monotonic() < deadline:
+                root.update()
+                time.sleep(0.02)
+            if not app.active:
+                app.close()
+        elif root is not None:
+            root.destroy()
+        if server is not None:
+            if server.poll() is None:
+                server.kill()
+            server.wait(timeout=5)
+        report.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding='utf-8')
+    return return_code

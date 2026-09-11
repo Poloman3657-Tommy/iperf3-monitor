@@ -1,0 +1,33 @@
+# Python / JavaScript environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+node_modules/
+.npm-cache/
+
+# Local measurement data and build output
+/results/
+/gui-results/
+/validation/
+/build-windows/
+/packaging-licenses/
+*.log
+*.zip
+*.zip.sha256
+/portable/*
+!/portable/iperf-monitor.html
+!/portable/README.md
+
+# Session-specific planning and validation notes
+/PLAN.md
+/GUI-PLAN.md
+/*VALIDATION.md
+/release-notes.md
+
+# Local editor / OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

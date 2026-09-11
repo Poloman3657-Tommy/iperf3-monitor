@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>iperf3 速率監測 · 離線工具</title>
+<style>
+:root{color-scheme:light;--ink:#182a3c;--muted:#607487;--line:#dce5ed;--blue:#2466d6;--green:#107c60;--red:#c6373e;--bg:#f3f6fa}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 system-ui,"Microsoft JhengHei",sans-serif}main{max-width:1280px;margin:auto;padding:30px 28px 50px}header{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;gap:18px}h1{font-size:28px;letter-spacing:-.6px;margin:0}h2{font-size:17px;margin:0}p{margin:6px 0;color:var(--muted)}.eyebrow{font-size:11px;font-weight:750;letter-spacing:2px;color:var(--green)}.pill,.badge{display:inline-block;border-radius:30px;padding:5px 12px;background:#e5f4ee;color:var(--green);font-size:12px;font-weight:700}.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:22px}.step{font-size:13px;color:var(--muted)}.step b{color:var(--ink);display:block;font-size:14px}.step span{float:left;background:#e3eaf3;border-radius:50%;width:26px;height:26px;text-align:center;margin:2px 9px 12px 0;color:#435c7a}.layout{display:grid;grid-template-columns:315px minmax(0,1fr);gap:22px}.panel{background:white;border:1px solid var(--line);border-radius:14px;padding:22px;box-shadow:0 3px 12px #213c5505}.settings{align-self:start}.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field{margin-top:14px}label{display:block;font-size:12px;font-weight:650;color:#465d73;margin-bottom:5px}input,select,textarea{width:100%;border:1px solid #cdd8e3;border-radius:7px;padding:10px;color:var(--ink);background:#fff;font:inherit}input:focus,select:focus,textarea:focus{outline:2px solid #91b3ee;outline-offset:1px}input[type=number]{min-width:0}button,.button{font:inherit;font-size:13px;font-weight:650;border:1px solid #ccd9e5;color:var(--ink);background:white;border-radius:7px;padding:9px 13px;cursor:pointer;display:inline-block;text-align:center}button:hover,.button:hover{background:#f0f5fc}button:disabled{opacity:.45;cursor:not-allowed}.primary{background:var(--blue);color:#fff;border-color:var(--blue)}.primary:hover{background:#1d53b1}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.hint{font-size:12px;color:var(--muted)}.divider{border-top:1px solid var(--line);margin-top:19px;padding-top:16px}.command{font:11px/1.6 ui-monospace,Consolas,monospace;min-height:154px;background:#f7f9fc;resize:vertical;overflow-wrap:anywhere}.statusline{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}.badge{background:#edf1f5;color:#5b6b7d}.badge.PASS{background:#e3f4eb;color:#117c51}.badge.LOW,.badge.ERROR{background:#ffeaeb;color:#b42c38}.badge.INCOMPLETE,.badge.NO_DATA{background:#fff2d5;color:#946615}.drop{border:1.5px dashed #b6c8dc;border-radius:9px;padding:15px;background:#f8fbff;text-align:center}.drop.over{border-color:var(--blue);background:#eaf2ff}.drop p{font-size:12px}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}.metric{background:#f7f9fc;border-radius:9px;padding:13px}.metric span{font-size:11px;color:var(--muted);display:block}.metric strong{font-size:24px;letter-spacing:-.5px;display:block;margin-top:3px}.metric small{font-size:11px;color:var(--muted);font-weight:400}.metric.danger strong{color:var(--red)}.chartbox{position:relative;height:350px}canvas{width:100%;height:100%;display:block}#tooltip{position:absolute;background:#172b40;color:white;border-radius:6px;padding:7px 10px;font-size:12px;pointer-events:none;white-space:pre;box-shadow:0 4px 12px #0002}.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin:8px 0}.legend i{display:inline-block;width:13px;height:3px;vertical-align:middle;margin-right:5px;background:var(--blue)}.legend .warm{background:#cbd5e1;height:9px}.legend .low{background:var(--red)}.legend .threshold{background:none;height:0;border-top:2px dashed var(--red)}.meta{font-size:12px;color:var(--muted);overflow-wrap:anywhere}#message{margin:12px 0 0;padding:9px 12px;border-radius:7px;background:#fff3df;color:#78550f;font-size:13px}#message.error{background:#ffeaeb;color:#ae2734}#message[hidden],#tooltip[hidden]{display:none}details{margin-top:18px}summary{cursor:pointer;font-size:13px;font-weight:650}.tablewrap{overflow:auto;max-height:280px;margin-top:10px}table{border-collapse:collapse;width:100%;font-size:12px;text-align:right}th,td{padding:8px;border-bottom:1px solid #edf1f5;white-space:nowrap}th{color:var(--muted);background:#f8fafc;position:sticky;top:0}th:first-child,td:first-child{text-align:left}.empty{padding:20px;color:var(--muted);text-align:center;font-size:13px}footer{font-size:11px;color:var(--muted);margin-top:20px}#paste{font:12px/1.5 ui-monospace,Consolas,monospace;height:110px;margin-top:10px}.source{font-size:11px;margin-top:7px;color:var(--muted)}@media(max-width:950px){.layout{grid-template-columns:1fr}.settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.settings .divider{margin:0;border:0;padding:0}.chartbox{height:330px}}@media(max-width:600px){main{padding:18px 12px}.steps{grid-template-columns:1fr;gap:7px}.settings-grid{display:block}.settings .divider{margin-top:20px}.panel{padding:16px}.metrics{grid-template-columns:1fr 1fr}.metric strong{font-size:22px}h1{font-size:23px}header{align-items:flex-start}.pill{white-space:nowrap;font-size:10px}.chartbox{height:285px}}
+header{flex-wrap:wrap}.header-actions{margin-left:auto;text-align:right;max-width:290px}.header-buttons{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}#run{min-width:90px;font-size:15px;padding:10px 20px}#runhelp{margin:7px 0 0;font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+<header><div><div class="eyebrow">NETWORK / THROUGHPUT</div><h1>iperf3 速率監測</h1><p>設定測試、匯入紀錄，找出低於門檻的時段。</p></div><div class="header-actions"><div class="header-buttons"><span class="pill">單一 HTML · 完全離線</span><button id="run" class="primary" type="button" aria-describedby="runhelp" title="下載測試腳本，再於 iperf3 資料夾執行">執行</button></div><p id="runhelp" role="status">下載 .cmd 後在本機執行</p></div></header>
+<div class="steps"><div class="step"><span>1</span><b>選擇環境、IP 與 port</b>產生這次測試的命令</div><div class="step"><span>2</span><b>在本機執行</b>用 CMD 或終端機執行並保存紀錄</div><div class="step"><span>3</span><b>匯入 .log 畫圖</b>忽略暖機、標示低速、匯出報告</div></div>
+<div class="layout">
+<section class="panel settings" aria-label="測試設定"><div class="settings-grid"><div><h2>測試設定</h2>
+<div class="field"><label for="platform">執行環境（執行 iperf3 的電腦）</label><select id="platform"><option value="windows">Windows</option><option value="ubuntu">Ubuntu</option><option value="macos">macOS</option></select></div>
+<div class="field"><label for="ip">Server IP（IPv4）</label><input id="ip" value="192.168.137.57" spellcheck="false" autocomplete="off"></div>
+<div class="row"><div class="field"><label for="port">Port</label><input id="port" type="number" min="1" max="65535" value="4477"></div><div class="field"><label for="duration">總測試秒數</label><input id="duration" type="number" min="1" max="86400" value="60"></div></div>
+<div class="field"><label for="direction">傳輸方向</label><select id="direction"><option value="upload">上傳 · 本機 → server</option><option value="download">下載 · server → 本機（-R）</option></select></div>
+<div class="row"><div class="field"><label for="warmup">忽略開始秒數</label><input id="warmup" type="number" min="0" step="0.01" value="20"></div><div class="field"><label for="threshold">低速門檻（Mbps）</label><input id="threshold" type="number" min="0.001" step="any" value="100"></div></div>
+<div class="field"><label for="parallel">平行連線數（判定合計速率）</label><input id="parallel" type="number" min="1" max="128" value="1"></div>
+<p class="hint">只有完整位於忽略時間之後、且嚴格低於門檻的取樣才標記。調整門檻會重新分析已匯入紀錄。</p></div>
+<div class="divider"><h2>執行命令</h2><p id="platformhint" class="hint">請準備 iperf3，並依選擇的環境執行命令。</p><label id="commandlabel" for="command">Windows CMD</label><textarea id="command" class="command" readonly spellcheck="false"></textarea><div class="actions"><button id="copy" class="primary">複製命令</button><button id="batch">下載 .cmd</button></div><p id="scripthint" class="hint"></p><p class="hint">輸出已導向 .log，終端機在測試期間不會每秒列印。瀏覽器不會直接執行 iperf3，也不會自動讀取其他資料夾。請等測試結束，再匯入紀錄。</p></div></div>
+</section>
+<section class="panel" aria-label="速率分析">
+<div class="statusline"><h2>速率分析</h2><span id="badge" class="badge">尚未匯入</span></div>
+<div id="drop" class="drop"><label for="file" class="button primary">選擇 iperf3 紀錄</label><input id="file" type="file" accept=".log,.txt" hidden><p>或將 .log / .txt 拖曳至此 · 資料只在本機處理</p></div>
+<div id="message" role="status" hidden></div>
+<div class="metrics"><div class="metric"><span>暖機後最低</span><strong id="min">—</strong><small>Mbps</small></div><div class="metric"><span>暖機後加權平均</span><strong id="average">—</strong><small>Mbps</small></div><div class="metric danger"><span>低速累計時間</span><strong id="low">—</strong><small>秒</small></div><div class="metric"><span>低速事件</span><strong id="events">—</strong><small>次</small></div></div>
+<div class="chartbox"><canvas id="chart" role="img" aria-label="速率隨時間變化圖"></canvas><div id="tooltip" hidden></div></div>
+<div class="legend"><span><i></i>區間平均速率</span><span><i class="warm"></i>暖機忽略</span><span><i class="threshold"></i>門檻</span><span><i class="low"></i>低速時段</span></div>
+<div id="meta" class="meta">尚未有測試資料；此頁不使用模擬速率。</div><div id="source" class="source"></div>
+<div class="actions"><button id="png" disabled>匯出 PNG 圖</button><button id="csv" disabled>匯出取樣 CSV</button><button id="eventcsv" disabled>匯出低速 CSV</button><button id="report" disabled>儲存單一 HTML 報告</button></div>
+<details open><summary>低速事件明細</summary><div class="tablewrap"><table><thead><tr><th>事件</th><th>開始（秒）</th><th>結束（秒）</th><th>持續（秒）</th><th>最低 Mbps</th></tr></thead><tbody id="eventrows"></tbody></table><div id="empty" class="empty">匯入紀錄後顯示低速事件。</div></div></details>
+<details><summary>貼上紀錄文字</summary><label for="paste" class="hint">可貼上 iperf3 完整文字輸出（含 iperf Done.）</label><textarea id="paste" spellcheck="false" placeholder="Connecting to host …"></textarea><button id="analyzepaste">分析貼上內容</button></details>
+</section></div>
+<footer>1 Mbps = 1,000,000 bits/s。每筆是約一秒的平均，不是瞬時速率；判定精度依 iperf3 文字輸出。跨越暖機邊界的整段忽略。錯誤、資料缺漏或測試未結束不會判為 PASS。支援本工具產生的 iperf3 文字紀錄（不使用 -J、-O）。</footer>
+</main>
+<script id="embedded-data" type="application/json">null</script>
+<script>
+/* CORE_SCRIPT */
+</script>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const fields=['platform','ip','port','duration','direction','warmup','threshold','parallel'];
+let raw='',sourceName='',result=null,chartGeometry=null;
+let filename=makeName();
+function makeName(){return 'iperf_'+new Date().toISOString().replace(/[-:.TZ]/g,'')+'_'+Math.random().toString(36).slice(2,7)+'.log';}
+function settings(){return {platform:$('platform').value,ip:$('ip').value.trim(),port:Number($('port').value),duration:Number($('duration').value),warmup:Number($('warmup').value),threshold:Number($('threshold').value),parallel:Number($('parallel').value),reverse:$('direction').value==='download'};}
+function applySettings(o){for(const key of fields){if(key==='direction')$('direction').value=o.reverse?'download':'upload';else if(o[key]!==undefined)$(key).value=o[key];}}
+function message(text,error=false){$('message').hidden=!text;$('message').textContent=text;$('message').className=error?'error':'';}
+function fmt(n,d=3){return n===null||!Number.isFinite(n)?'—':n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});}
+function updatePlatformUI(){
+  const windows=settings().platform==='windows',name=settings().platform==='macos'?'macOS':'Ubuntu';
+  $('commandlabel').textContent=windows?'Windows CMD':name+' 終端機（POSIX shell）';
+  $('platformhint').textContent=windows?'請準備 iperf3.exe 與其 DLL，在該資料夾開啟 CMD，貼上以下命令。':'請先準備此系統版本的 iperf3；命令會先搜尋 PATH，再尋找目前資料夾可執行的 ./iperf3。';
+  $('batch').textContent=windows?'下載 .cmd':'下載 .sh';
+  $('scripthint').textContent=windows?'將 run-iperf.cmd 放在 iperf3.exe 同一資料夾後雙擊執行。':'在下載腳本的資料夾開啟終端機，執行 sh run-iperf.sh；紀錄會存於腳本同一資料夾。';
+  $('runhelp').textContent=windows?'下載 .cmd 後在本機執行':'下載 .sh 後執行 sh run-iperf.sh';
+}
+function updateCommand(){updatePlatformUI();try{$('command').value=IperfCore.command(settings(),filename);$('copy').disabled=$('batch').disabled=$('run').disabled=false;return true;}catch(e){$('command').value=e.message;$('copy').disabled=$('batch').disabled=$('run').disabled=true;return false;}}
+function download(content,name,type){const blob=content instanceof Blob?content:new Blob([content],{type});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function setData(text,name){
+  try{
+    if(text.length>32*1024*1024)throw Error('檔案超過 32 MB，請縮短測試時間或分次測試。');
+    const o=settings();const parsed=IperfCore.analyze(text,o.warmup,o.threshold);
+    // Keep report labels tied to the imported source, rather than editable next-run fields.
+    raw=text;sourceName=name;result=parsed;render();message(parsed.error||'紀錄已匯入。可調整忽略時間或門檻重新判定。',!!parsed.error);
+  }catch(e){message('匯入失敗：'+e.message,true);}
+}
+async function importFile(file){if(!file)return;try{if(file.size>32*1024*1024)throw Error('檔案超過 32 MB。');setData(await file.text(),file.name);}catch(e){message(e.message,true);}finally{$('file').value='';}}
+function render(){
+  const r=result;
+  $('badge').textContent=r?r.verdict:'尚未匯入';$('badge').className='badge '+(r?r.verdict:'');
+  $('min').textContent=fmt(r?.min??null);$('average').textContent=fmt(r?.average??null);
+  $('low').textContent=r?fmt(r.lowSeconds,2):'—';$('events').textContent=r?String(r.events.length):'—';
+  $('eventrows').replaceChildren();
+  if(r)for(const [i,e] of r.events.entries()){const tr=document.createElement('tr');for(const value of [i+1,fmt(e.start,2),fmt(e.end,2),fmt(e.seconds,2),fmt(e.min)]){const td=document.createElement('td');td.textContent=value;tr.append(td);}$('eventrows').append(tr);}
+  $('empty').hidden=!!r?.events.length;$('empty').textContent=!r?'匯入紀錄後顯示低速事件。':r.verdict==='PASS'?'本次測試沒有低於門檻的時段。':r.lowSamples===0?'沒有記錄到低速事件；請同時確認測試狀態。':'';
+  if(r){const peer=r.peer?`${r.peer.ip}:${r.peer.port} · ${r.peer.reverse?'下載（server → 本機）':'上傳（本機 → server）'}`:'紀錄未包含目標或方向資訊';$('meta').textContent=`${peer} · ${r.samples.length} 個取樣 · 暖機後 ${fmt(r.seconds,2)} 秒`;$('source').textContent=`來源：${sourceName}；判定設定：忽略 ${settings().warmup} 秒、低於 ${settings().threshold} Mbps。`;}else{$('meta').textContent='尚未有測試資料；此頁不使用模擬速率。';$('source').textContent='';}
+  for(const id of ['png','csv','eventcsv','report'])$(id).disabled=!r;
+  draw();
+}
+function niceMax(value){const step=10**Math.floor(Math.log10(value))/5;return Math.ceil(value/step)*step;}
+function plot(canvas,w,h,exported=false){
+  const dpr=exported?1:Math.min(devicePixelRatio||1,2);canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);const c=canvas.getContext('2d');c.scale(dpr,dpr);c.fillStyle='#ffffff';c.fillRect(0,0,w,h);
+  let top=24;if(exported){c.fillStyle='#182a3c';c.font='bold 21px sans-serif';const peer=result.peer?`${result.peer.ip}:${result.peer.port} / ${result.peer.reverse?'Download':'Upload'}`:'iperf3';c.fillText(`${result.verdict} | ${peer}`,70,29);c.font='14px sans-serif';c.fillText(`After warm-up: min ${fmt(result.min)} Mbps | mean ${fmt(result.average)} Mbps | low ${fmt(result.lowSeconds,2)} s`,70,53);top=80;}
+  const pad={l:w<500?52:65,r:16,t:top,b:46};const pw=w-pad.l-pad.r,ph=h-pad.t-pad.b;
+  const o=settings(),samples=result?.samples||[];
+  const xmax=Math.max(1,o.warmup+1,samples.at(-1)?.end||o.duration||60);
+  const ymax=niceMax(Math.max(100,Number.isFinite(o.threshold)?o.threshold:100,...[samples.reduce((v,s)=>Math.max(v,s.mbps),0)])*1.08);
+  const x=t=>pad.l+t/xmax*pw,y=v=>pad.t+ph-v/ymax*ph;
+  c.fillStyle='#e9edf3';c.fillRect(pad.l,pad.t,Math.max(0,Math.min(pw,x(o.warmup)-pad.l)),ph);
+  if(result)for(const e of result.events){c.fillStyle='#fde8e8';c.fillRect(x(e.start),pad.t,x(e.end)-x(e.start),ph);}
+  c.font='11px sans-serif';c.strokeStyle='#e3e9f0';c.lineWidth=1;c.fillStyle='#65798e';
+  for(let i=0;i<=5;i++){const v=ymax*i/5,yy=y(v);c.beginPath();c.moveTo(pad.l,yy);c.lineTo(w-pad.r,yy);c.stroke();c.textAlign='right';c.fillText(v>=1000?fmt(v,0):fmt(v,0),pad.l-8,yy+4);}
+  for(let i=0;i<=6;i++){const t=xmax*i/6,xx=x(t);c.textAlign='center';c.fillText(fmt(t,xmax<10?1:0),xx,h-25);}
+  c.textAlign='left';c.fillText('Mbps',pad.l,pad.t-9);c.textAlign='center';c.fillText('Time (seconds)',pad.l+pw/2,h-5);
+  if(Number.isFinite(o.threshold)){c.strokeStyle='#c6373e';c.setLineDash([5,4]);c.beginPath();c.moveTo(pad.l,y(o.threshold));c.lineTo(w-pad.r,y(o.threshold));c.stroke();c.setLineDash([]);}
+  c.save();c.beginPath();c.rect(pad.l,pad.t,pw,ph);c.clip();c.strokeStyle='#2466d6';c.lineWidth=1.7;
+  // Interval step segments do not imply sub-second instantaneous measurements.
+  for(let i=0;i<samples.length;i++){const s=samples[i];c.beginPath();c.moveTo(x(s.start),y(s.mbps));c.lineTo(x(s.end),y(s.mbps));if(i+1<samples.length&&Math.abs(samples[i+1].start-s.end)<.011)c.lineTo(x(s.end),y(samples[i+1].mbps));c.stroke();if(s.status==='LOW'){c.fillStyle='#c6373e';c.beginPath();c.arc(x((s.start+s.end)/2),y(s.mbps),3,0,Math.PI*2);c.fill();}}
+  c.restore();if(!samples.length){c.fillStyle='#73849a';c.textAlign='center';c.font='14px sans-serif';c.fillText(result?'No throughput samples':'匯入紀錄後顯示速率圖',pad.l+pw/2,pad.t+ph/2);}
+  return {xmax,pad,pw,ph};
+}
+function draw(){const canvas=$('chart');const rect=canvas.getBoundingClientRect();if(rect.width>0)chartGeometry=plot(canvas,rect.width,rect.height);}
+$('file').addEventListener('change',e=>importFile(e.target.files[0]));
+$('drop').addEventListener('dragover',e=>{e.preventDefault();$('drop').classList.add('over');});
+$('drop').addEventListener('dragleave',()=>$('drop').classList.remove('over'));
+$('drop').addEventListener('drop',e=>{e.preventDefault();$('drop').classList.remove('over');if(e.dataTransfer.files.length!==1){message('請一次匯入一份紀錄。',true);return;}importFile(e.dataTransfer.files[0]);});
+$('analyzepaste').addEventListener('click',()=>setData($('paste').value,'貼上內容'));
+for(const key of fields)$(key).addEventListener('input',()=>{filename=makeName();updateCommand();if(raw&&(key==='warmup'||key==='threshold')){try{result=IperfCore.analyze(raw,settings().warmup,settings().threshold);message(result.error||'',!!result.error);}catch(e){result=null;message(e.message,true);}render();}else if(!result)draw();});
+$('copy').addEventListener('click',async()=>{filename=makeName();if(!updateCommand())return;try{await navigator.clipboard.writeText($('command').value);message(settings().platform==='windows'?'命令已複製。請在 iperf3 資料夾的 CMD 執行。':'命令已複製。請在終端機的測試資料夾執行。');}catch{ $('command').focus();$('command').select();if(document.execCommand('copy'))message('命令已複製。');else message('瀏覽器無法自動複製，請按 Ctrl+C 複製已選取的命令。');}});
+$('batch').addEventListener('click',()=>{filename=makeName();if(!updateCommand())return;const script=IperfCore.script(settings(),filename);download(script.content,script.name,'application/octet-stream');});
+// Reuse the same validated script generator; a standalone HTML cannot launch executables.
+$('run').addEventListener('click',()=>{if(!updateCommand())return;$('batch').click();$('runhelp').textContent=settings().platform==='windows'?'請將下載的 run-iperf.cmd 放到 iperf3.exe 同一資料夾，雙擊執行；完成後匯入 .log。':'請在下載腳本的資料夾開啟終端機，執行 sh run-iperf.sh；完成後匯入 .log。';});
+$('csv').addEventListener('click',()=>{if(!result)return;const rows=result.samples.map(s=>[s.start,s.end,s.mbps,s.status].join(','));download('\uFEFFstart,end,mbps,status\r\n'+rows.join('\r\n'),'samples.csv','text/csv;charset=utf-8');});
+$('eventcsv').addEventListener('click',()=>{if(!result)return;download('\uFEFFstart,end,seconds,min_mbps\r\n'+result.events.map(e=>[e.start,e.end,e.seconds,e.min].join(',')).join('\r\n'),'low-events.csv','text/csv;charset=utf-8');});
+$('png').addEventListener('click',()=>{if(!result)return;const canvas=document.createElement('canvas');plot(canvas,1600,650,true);canvas.toBlob(blob=>{if(blob)download(blob,'throughput.png','image/png');else message('無法產生 PNG。',true);});});
+$('report').addEventListener('click',()=>{if(!result)return;const clone=document.documentElement.cloneNode(true);const payload={settings:settings(),raw,sourceName};clone.querySelector('#embedded-data').textContent=JSON.stringify(payload).replace(/</g,'\\u003c');clone.querySelector('#paste').textContent='';clone.querySelector('#tooltip').hidden=true;download('<!doctype html>\n'+clone.outerHTML,'iperf-report.html','text/html;charset=utf-8');});
+$('chart').addEventListener('mousemove',e=>{if(!result?.samples.length||!chartGeometry)return;const rect=$('chart').getBoundingClientRect(),mx=e.clientX-rect.left,g=chartGeometry,t=(mx-g.pad.l)/g.pw*g.xmax;const s=result.samples.find(s=>s.start<=t&&s.end>=t);if(!s){$('tooltip').hidden=true;return;}$('tooltip').textContent=`${fmt(s.start,2)}–${fmt(s.end,2)} s\n${fmt(s.mbps)} Mbps · ${s.status}`;$('tooltip').hidden=false;$('tooltip').style.left=Math.max(0,Math.min(rect.width-180,mx+12))+'px';$('tooltip').style.top='8px';});
+$('chart').addEventListener('mouseleave',()=>$('tooltip').hidden=true);
+new ResizeObserver(draw).observe($('chart').parentElement);
+try{const saved=JSON.parse($('embedded-data').textContent);if(saved){applySettings(saved.settings);setData(saved.raw,saved.sourceName||'已儲存報告');}}catch(e){message('報告資料無法讀取：'+e.message,true);}
+updateCommand();render();
+</script>
+</body>
+</html>
