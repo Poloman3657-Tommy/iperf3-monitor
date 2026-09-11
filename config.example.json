@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "server": "192.168.137.57",
+  "port": 4477,
+  "duration": 60,
+  "warmup": 20,
+  "threshold": 100,
+  "parallel": 1,
+  "reverse": false,
+  "protocol": "TCP",
+  "udp_mbps": 1000,
+  "iperf": "",
+  "output": "gui-results"
+}

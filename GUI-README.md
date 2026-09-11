@@ -1,6 +1,6 @@
 # Python 桌面版 iperf3 即時監測
 
-**Windows 不想安裝相依套件：** 使用 [Windows x64 免安裝包](portable/iperf-monitor-windows-x64.zip)，完整解壓縮後開啟 `IperfMonitor.exe`。包內已含 Python、Tk、Matplotlib 與 iperf3；不需 pip。詳細步驟見 [Windows 說明](Windows-README.md)。以下是 Python 原始碼版的使用與開發方式。
+**Windows 不想安裝相依套件：** 使用 [Windows x64 免安裝包](https://github.com/Poloman3657-Tommy/iperf3-monitor/releases/latest/download/iperf-monitor-windows-x64.zip)，完整解壓縮後開啟 `IperfMonitor.exe`。包內已含 Python、Tk、Matplotlib 與 iperf3；不需 pip。詳細步驟見 [Windows 說明](Windows-README.md)。以下是 Python 原始碼版的使用與開發方式。
 
 按「開始測速」會**直接啟動本機 iperf3**，每秒更新速率曲線及低速事件；不需要 HTML、下載測試腳本或手動匯入 log。
 
@@ -23,6 +23,16 @@ E:\Herdr\Workspace\iperf-monitor\run-gui.cmd --iperf D:\iperf3.16_64\iperf3.exe
 預設 `192.168.137.57:4477`、上傳、60 秒、忽略前 20 秒、門檻 100 Mbps、單條 TCP 連線。開始後表單鎖定，避免測試中的方向或門檻被改標；結束後可修改再測。
 
 **持續測試：將「測試秒數」填為 `0`。** 程式使用 iperf3 `-t 0`，不設總時長上限、不定期重連，直到按「停止」、關閉視窗，或遇到測試錯誤。進度條顯示持續活動，不顯示完成百分比。暖機只忽略開始的一次 20 秒（可修改），之後持續判定低速；停止後保存已取得的紀錄及圖表。非零秒數仍依原本指定時間測試。
+
+## 保存設定與 UDP
+
+桌面版啟動時讀取程式旁的 `config.json`。按「儲存設定」後，下次會載入 IP、port、方向、協定、UDP 目標速率、秒數、暖機、門檻、連線數和路徑。Clone 原始碼時可將 [config.example.json](config.example.json) 複製為 `config.json`；也可在介面按儲存建立。Python ZIP 和 Windows ZIP 都附有 `config.json`。
+
+設定檔支援部分欄位，其餘使用預設；未知／重複欄位、錯誤類型或格式會顯示錯誤並保留原檔。寫入採原子替換，失敗不破壞舊檔。位於程式資料夾內的路徑以相對路徑保存，方便搬移。`config.json` 是個人設定，已加入 `.gitignore`；`run.json` 仍僅記錄每次測試參數。
+
+「協定」選 TCP 時維持原本不限速；選 UDP 時啟用「UDP Mbps／每條」，預設 1000 Mbps。程式加入 `-u -b`，目標是每條連線的速率，SUM 合計約等於目標 × 連線數。例：UDP 25 Mbps、2 條連線，總目標約 50 Mbps。UDP 仍以吞吐量判定低速，丟包／jitter 保留在原始 log。
+
+UDP 多連線已對 Linux server 驗證；目前包內 Windows/Cygwin iperf3 作為 server 時有多 UDP stream 相容性問題，請在該情境使用單條連線或 Linux server。設定例子與詳細欄位見 [Windows 說明](Windows-README.md)。原有 CLI／HTML 版本仍維持各自的參數介面，本次新增的是桌面版。
 
 ## 搬到其他電腦
 
@@ -94,17 +104,20 @@ macOS 請使用含可用 Tkinter 的 Python；可先用 `python3 -m tkinter` 檢
 
 - `gui.py`：Tk 表單、即時曲線、事件佇列及主視窗生命週期。
 - `gui_runner.py`：不可變設定、路徑驗證、背景測速；不呼叫 Tk。
+- `config_store.py`：設定檔驗證、相對路徑與原子儲存。
 - `monitor.py`：與既有 CLI 共用解析、門檻判定、低速事件及檔案輸出；靜態圖使用獨立 Agg Figure，不切換 Tk 的 backend。
 
 工作區測試命令：
 
 ```bat
-..\.venv\Scripts\python.exe -m unittest -v test_gui_runner test_monitor
+..\.venv\Scripts\python.exe -m unittest -v test_config_store test_gui_runner test_monitor
+..\.venv\Scripts\python.exe validate_settings_gui.py --iperf D:\iperf3.16_64\iperf3.exe
 ..\.venv\Scripts\python.exe validate_gui.py --iperf D:\iperf3.16_64\iperf3.exe
 ..\.venv\Scripts\python.exe validate_gui.py --iperf D:\iperf3.16_64\iperf3.exe --close-only
 ..\.venv\Scripts\python.exe validate_gui.py --iperf D:\iperf3.16_64\iperf3.exe --continuous
+..\.venv\Scripts\python.exe validate_gui.py --iperf D:\iperf3.16_64\iperf3.exe --live --udp
 ```
 
-19 項單元／子程序測試通過。已驗證 Windows 的真正 Tk 事件循環、本機低速／停止／連線失敗、GUI 即時曲線與資料輸出，以及測速中關閉視窗時的保存與回呼清理。持續模式以 `-t 0` 實際執行到 25.01 秒後按停止，取得 25 筆取樣，前 20 秒不報警、之後 5 筆正確標記低速並保存全套報告。停止緩衝資料保存、持續模式不受總時長 watchdog 限制都有獨立回歸測試。Ubuntu／macOS 原始碼可移植，但本次沒有在該兩種系統的圖形桌面實測。
+27 項單元／子程序測試通過，涵蓋設定檔錯誤與原子儲存、相對路徑搬移、TCP／UDP 命令、暖機／門檻及停止保存。真正 Tk 測試已驗證保存設定後重新啟動、協定欄位狀態與錯誤呈現。NUC UDP 雙條下載測試共 24 秒，每條目標 25 Mbps，暖機後平均約 50.000 Mbps，4 個低速取樣合併成 1 次事件。重建的 Windows EXE 已在隔離 Python 路徑的資料夾驗證 UDP 持續模式、PNG 及設定重讀。Ubuntu／macOS 尚未有原生 GUI 實測。
 
 2026-09-11 以 GUI 流程實測 NUC `192.168.137.57:4477`，下載 60 秒，前 20 秒忽略：最低 **496.441 Mbps**，加權平均 **850.017 Mbps**，低速 **0 次**，結果 PASS。這只代表該次觀察，長期監測可增加秒數。

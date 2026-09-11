@@ -116,7 +116,8 @@ def draw_plot(samples: list[dict], summary: dict, args: argparse.Namespace, outp
     direction = 'Download / local receiver' if args.reverse else 'Upload / local sender'
     minimum = f"{summary['min_mbps']:.3f}" if summary['min_mbps'] is not None else 'N/A'
     average = f"{summary['average_mbps']:.3f}" if summary['average_mbps'] is not None else 'N/A'
-    ax.set_title(f"{summary['verdict']} | {args.server}:{args.port} | {direction}\n"
+    protocol = getattr(args, 'protocol', 'TCP')
+    ax.set_title(f"{summary['verdict']} | {protocol} | {args.server}:{args.port} | {direction}\n"
                  f"After warm-up: min {minimum} Mbps | mean {average} Mbps | "
                  f"low {summary['low_seconds']:.2f}s / {len(summary['events'])} events", loc='left')
     ax.grid(alpha=0.2)

@@ -20,6 +20,7 @@ def check_package(report_path: str) -> int:
         import matplotlib
         from gui import MonitorApp
         from gui_runner import app_directory, find_iperf
+        from config_store import load_config
 
         executable = find_iperf()
         if not executable:
@@ -40,9 +41,11 @@ def check_package(report_path: str) -> int:
         result['tcl_library'] = root.tk.eval('info library')
         errors = []
         root.report_callback_exception = lambda kind, value, tb: errors.append(str(value))
-        app = MonitorApp(root)
+        preferences = report.parent / 'package-test-config.json'
+        app = MonitorApp(root, settings_path=preferences)
         # Use the same buttons and event loop as the normal app, in continuous download mode.
         for key, value in {'server': '127.0.0.1', 'port': port, 'duration': 0, 'warmup': 1,
+                           'protocol': 'UDP', 'udp_mbps': 25, 'parallel': 1,
                            'direction': '下載：server → 本機', 'output': report.parent / 'run-data'}.items():
             app.vars[key].set(str(value))
         app.start_button.invoke()
@@ -65,8 +68,14 @@ def check_package(report_path: str) -> int:
             raise RuntimeError(f'Unexpected measurement result: {outcome}')
         if (outcome.output / 'throughput.png').stat().st_size < 10000:
             raise RuntimeError('PNG report was not generated correctly')
+        if not outcome.summary['low_samples']:
+            raise RuntimeError('UDP throughput was not classified below the test threshold')
+        app.save_button.invoke()
+        restored = load_config(preferences)
+        if restored.protocol != 'UDP' or restored.udp_mbps != 25 or restored.parallel != 1 or not restored.reverse:
+            raise RuntimeError('Saved settings did not round-trip correctly')
         result.update(passed=True, samples=len(outcome.samples), ui_event_pumps=pumps,
-                      output=str(outcome.output), summary=outcome.summary)
+                      output=str(outcome.output), summary=outcome.summary, config_roundtrip=True)
         return_code = 0
     except Exception:
         result['error'] = traceback.format_exc()

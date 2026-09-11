@@ -18,6 +18,8 @@ Windows 包需保留整個資料夾，不能只複製 EXE。原始碼適用 Wind
 
 - 可調 IP、port、上傳／下載、測試時間、暖機時間、低速門檻與平行連線數。
 - 桌面版按「開始／停止」直接控制本機 iperf3，即時顯示曲線。
+- 桌面版支援 TCP／UDP，UDP 可指定每條連線的目標 Mbps。
+- 桌面版啟動時載入 `config.json`，按「儲存設定」保存 IP、port、協定與其他參數。
 - Python 桌面／CLI 的測試秒數設為 **0** 可持續測試，直到停止或發生錯誤。
 - 預設忽略前 **20 秒**；之後 **<100 Mbps** 標記低速，等於門檻不算。
 - 保存原始 log、每秒 CSV、事件 CSV、摘要 JSON、執行參數及 PNG。
@@ -77,7 +79,7 @@ python monitor.py --iperf iperf3 --server 192.168.137.57 --port 4477 --duration 
 ## 測試
 
 ```sh
-python -m unittest -v test_gui_runner test_monitor
+python -m unittest -v test_config_store test_gui_runner test_monitor
 node --test html-src/test-core.cjs
 npm ci --prefix html-src/.test-tools --cache html-src/.test-tools/.npm-cache --ignore-scripts
 node html-src/test-ui.cjs

@@ -25,6 +25,7 @@ node_modules/
 /GUI-PLAN.md
 /*VALIDATION.md
 /release-notes.md
+/config.json
 
 # Local editor / OS files
 .DS_Store

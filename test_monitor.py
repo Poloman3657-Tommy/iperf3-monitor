@@ -44,6 +44,12 @@ class MonitorTests(unittest.TestCase):
         self.assertIsNotNone(sample, 'A complete traffic stall must not disappear from monitoring')
         self.assertEqual(sample['mbps'], 0)
 
+    def test_udp_jitter_and_loss_columns_do_not_change_throughput_parsing(self):
+        line = '[SUM] 20.00-21.00 sec 6 MBytes 50000 Kbits/sec 0.015 ms 3/1000 (0.3%)'
+        sample = self.m.parse_interval(line, 2)
+        self.assertEqual(sample['mbps'], 50)
+        self.assertIsNone(self.m.parse_interval(line + ' receiver', 2))
+
     def test_invalid_interval_is_rejected(self):
         for args in [(21, 20, 100), (20, 20, 100), (20, 21, -1), (20, 21, float('nan'))]:
             with self.assertRaises(ValueError):

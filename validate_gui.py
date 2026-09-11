@@ -22,20 +22,24 @@ def available_port():
 
 
 def exercise(executable, name, server, port, duration, warmup=20, reverse=False,
-             stop_after=None, expected='PASS', output=None, close_on_stop=False):
+             stop_after=None, expected='PASS', output=None, close_on_stop=False,
+             protocol='TCP', udp_mbps=1000, parallel=1):
+    folder = output or Path(__file__).resolve().parent / 'validation' / 'gui' / name
     root = tk.Tk()
     root.withdraw()
-    app = MonitorApp(root, executable)
+    app = MonitorApp(root, executable, settings_path=folder / 'config.json')
     failures = []
     root.report_callback_exception = lambda kind, value, traceback: failures.append(str(value))
-    folder = output or Path(__file__).resolve().parent / 'validation' / 'gui' / name
     for key, value in {'server': server, 'port': port, 'duration': duration,
                        'warmup': warmup, 'output': folder,
+                       'protocol': protocol, 'udp_mbps': udp_mbps, 'parallel': parallel,
                        'direction': '下載：server → 本機' if reverse else '上傳：本機 → server'}.items():
         app.vars[key].set(str(value))
     observed = []
     app.start_button.invoke()
     assert app.active, app.status.get()
+    assert app.save_button.instate(['disabled'])
+    assert app.udp_entry.instate(['disabled'])
     if duration == 0:
         assert str(app.progress['mode']) == 'indeterminate'
     deadline = time.monotonic() + (duration if duration else (stop_after or 30)) + 30
@@ -110,13 +114,19 @@ def main():
     parser.add_argument('--live', action='store_true')
     parser.add_argument('--close-only', action='store_true')
     parser.add_argument('--continuous', action='store_true')
+    parser.add_argument('--udp', action='store_true')
     args = parser.parse_args()
     if args.live:
-        exercise(args.iperf, 'nuc-download', '192.168.137.57', 4477, 60, reverse=True, expected='COMPLETE',
+        exercise(args.iperf, 'nuc-udp-download' if args.udp else 'nuc-download',
+                 '192.168.137.57', 4477, 24 if args.udp else 60, reverse=True,
+                 expected='LOW' if args.udp else 'COMPLETE', protocol='UDP' if args.udp else 'TCP',
+                 udp_mbps=25, parallel=2 if args.udp else 1,
                  output=Path(__file__).resolve().parent / 'gui-results')
         return
     command = RunConfig.command
-    if args.continuous:
+    if args.udp:
+        cases = [('udp-download', 24, 'LOW', None)]
+    elif args.continuous:
         cases = [('continuous', 0, 'INTERRUPTED', 25)]
     else:
         cases = [('close', 60, 'INTERRUPTED', 2)] if args.close_only else [('low', 24, 'LOW', None), ('stop', 60, 'INTERRUPTED', 2)]
@@ -129,14 +139,16 @@ def main():
             time.sleep(0.5)
             assert server.poll() is None, 'Loopback server did not start'
             # Throttle only the controlled loopback fixture; record the actual command.
-            with patch.object(RunConfig, 'command', lambda self: command(self) + ['-b', '50M']):
+            with patch.object(RunConfig, 'command', lambda self: command(self) + ([] if self.protocol == 'UDP' else ['-b', '50M'])):
                 exercise(args.iperf, name, '127.0.0.1', port, duration, expected=expected,
-                         stop_after=stop_after, close_on_stop=args.close_only)
+                         stop_after=stop_after, close_on_stop=args.close_only,
+                         protocol='UDP' if args.udp else 'TCP', udp_mbps=25,
+                         parallel=1, reverse=args.udp)
         finally:
             if server.poll() is None:
                 server.terminate()
             server.wait(timeout=5)
-    if not args.close_only and not args.continuous:
+    if not args.close_only and not args.continuous and not args.udp:
         exercise(args.iperf, 'connection-error', '127.0.0.1', port, 21, expected='ERROR')
 
 

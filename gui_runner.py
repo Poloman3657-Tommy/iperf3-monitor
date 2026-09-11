@@ -39,9 +39,25 @@ class RunConfig:
     threshold: float = 100
     parallel: int = 1
     reverse: bool = False
+    protocol: str = 'TCP'
+    udp_mbps: float = 1000
     output: Path = field(default_factory=lambda: app_directory() / 'gui-results')
 
-    def validated(self) -> RunConfig:
+    def validated(self, *, check_executable: bool = True) -> RunConfig:
+        if not all(isinstance(value, str) for value in (self.server, self.iperf, self.protocol)):
+            raise ValueError('IP、執行檔與協定必須是文字。')
+        if type(self.reverse) is not bool:
+            raise ValueError('reverse 必須是 true 或 false。')
+        protocol = self.protocol.strip().upper()
+        if protocol not in ('TCP', 'UDP'):
+            raise ValueError('協定必須是 TCP 或 UDP。')
+        for name, value in [('忽略秒數', self.warmup), ('門檻', self.threshold), ('UDP Mbps', self.udp_mbps)]:
+            try:
+                finite = type(value) in (int, float) and math.isfinite(value)
+            except OverflowError:
+                finite = False
+            if not finite:
+                raise ValueError(f'{name} 必須是有限數字。')
         server = self.server.strip()
         try:
             ipaddress.ip_address(server)
@@ -58,15 +74,21 @@ class RunConfig:
             raise ValueError('忽略秒數須大於或等於 0，且至少保留暖機後 1 秒。')
         if not math.isfinite(self.threshold) or not 0 < self.threshold <= 1_000_000:
             raise ValueError('門檻須大於 0，最多 1,000,000 Mbps。')
+        if not 0.000001 <= self.udp_mbps <= 1_000_000:
+            raise ValueError('UDP 目標速率必須介於 0.000001–1,000,000 Mbps（每條連線）。')
         executable = shutil.which(str(Path(self.iperf.strip()).expanduser())) if self.iperf.strip() else None
-        if not executable:
+        if not executable and check_executable:
             raise ValueError('找不到可執行的 iperf3，請用「瀏覽」選擇本機執行檔。')
-        return replace(self, server=server, iperf=str(Path(executable).resolve()),
+        return replace(self, server=server, protocol=protocol,
+                       iperf=str(Path(executable).resolve()) if executable else self.iperf.strip(),
                        output=Path(self.output).expanduser().resolve())
 
     def command(self) -> list[str]:
         args = [self.iperf, '-c', self.server, '-p', str(self.port), '-t', str(self.duration),
                 '-i', '1', '-f', 'k', '-P', str(self.parallel), '--forceflush', '--connect-timeout', '5000']
+        if self.protocol == 'UDP':
+            # iperf3 applies -b independently to each stream, not to the SUM rate.
+            args.extend(['-u', '-b', str(round(self.udp_mbps * 1_000_000))])
         return args + (['-R'] if self.reverse else [])
 
 

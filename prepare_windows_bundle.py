@@ -19,6 +19,7 @@ vendor_names = ['iperf3.exe', 'cygwin1.dll', 'cygcrypto-3.dll', 'cygz.dll']
 for name in vendor_names:
     shutil.copy2(vendor / name, target / name)
 shutil.copy2(root / 'Windows-README.md', bundle / 'README.md')
+shutil.copy2(root / 'config.example.json', bundle / 'config.json')
 licenses = bundle / 'licenses'
 licenses.mkdir(exist_ok=True)
 versions = {}
@@ -59,7 +60,8 @@ for name, url in remote.items():
             cached.write_bytes(response.read())
     shutil.copy2(cached, licenses / name)
     print('License:', name)
-sources = ['desktop_entry.py', 'package_check.py', 'gui.py', 'gui_runner.py', 'monitor.py', 'build-windows.spec']
+sources = ['desktop_entry.py', 'package_check.py', 'gui.py', 'gui_runner.py', 'config_store.py',
+           'config.example.json', 'monitor.py', 'build-windows.spec']
 manifest = {
     'built_at': datetime.now().astimezone().isoformat(), 'platform': 'Windows x64',
     'python': sys.version, 'dependencies': versions,

@@ -113,6 +113,17 @@ class DesktopConfigTests(unittest.TestCase):
         args = config.command()
         self.assertEqual(args[args.index('-t') + 1], '0')
 
+    def test_udp_command_has_explicit_per_stream_rate_and_reverse(self):
+        config = self.config(protocol='UDP', udp_mbps=25.5, parallel=2, reverse=True)
+        args = config.command()
+        self.assertIn('-u', args)
+        self.assertIn('-R', args)
+        self.assertEqual(args[args.index('-b') + 1], '25500000')
+        self.assertEqual(args[args.index('-P') + 1], '2')
+        tcp = self.config(protocol='TCP', udp_mbps=25.5).command()
+        self.assertNotIn('-u', tcp)
+        self.assertNotIn('-b', tcp)
+
     def test_invalid_settings_fail_before_start(self):
         for changes in [dict(server='1.2.3.4 & calc'), dict(port=65536), dict(port=1.5),
                         dict(duration=20), dict(duration=-1), dict(threshold=float('nan')), dict(warmup=-1),

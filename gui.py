@@ -31,14 +31,22 @@ except ModuleNotFoundError as exc:
     raise SystemExit(2) from None
 
 from gui_runner import RunConfig, RunOutcome, app_directory, find_iperf, run_test
+from config_store import load_config, save_config
 import monitor
 
 
 class MonitorApp:
     """Own every Tk/Matplotlib operation on the main thread; workers only enqueue data."""
 
-    def __init__(self, root: tk.Tk, iperf: str = ''):
+    def __init__(self, root: tk.Tk, iperf: str = '', settings_path: Path | None = None):
         self.root = root
+        self.settings_path = settings_path or app_directory() / 'config.json'
+        load_error = None
+        try:
+            defaults = load_config(self.settings_path)
+        except (OSError, ValueError) as exc:
+            load_error = f'設定檔載入失敗：{exc}。目前顯示內建預設；原檔未變更。'
+            defaults = RunConfig(iperf='')
         self.active = self.closing = self.closed = False
         self.worker = None
         self.stop_event = threading.Event()
@@ -50,15 +58,21 @@ class MonitorApp:
         self.started_at = self.last_draw = 0.0
         self.controls = []
         self.vars = {name: tk.StringVar(value=str(value)) for name, value in {
-            'iperf': iperf or find_iperf(), 'server': '192.168.137.57', 'port': 4477,
-            'duration': 60, 'warmup': 20, 'threshold': 100, 'parallel': 1,
-            'output': app_directory() / 'gui-results',
-            'direction': '上傳：本機 → server',
+            'iperf': iperf or defaults.iperf or find_iperf(), 'server': defaults.server, 'port': defaults.port,
+            'duration': defaults.duration, 'warmup': defaults.warmup, 'threshold': defaults.threshold,
+            'parallel': defaults.parallel, 'protocol': defaults.protocol, 'udp_mbps': defaults.udp_mbps,
+            'output': defaults.output,
+            'direction': '下載：server → 本機' if defaults.reverse else '上傳：本機 → server',
         }.items()}
         self.status = tk.StringVar(value='就緒：確認設定後按「開始測速」。')
         self.path_status = tk.StringVar(value='測試紀錄與圖表會自動保存。')
         self.metrics = {key: tk.StringVar(value='—') for key in ('current', 'minimum', 'average', 'low')}
         self._build()
+        self.vars['protocol'].trace_add('write', lambda *_: self._update_protocol_state())
+        self._update_protocol_state()
+        if load_error:
+            self.status.set(load_error)
+            self.status_label.configure(foreground='#c6373e')
         self.root.protocol('WM_DELETE_WINDOW', self.close)
         self.root.after(100, self._poll)
 
@@ -84,6 +98,9 @@ class MonitorApp:
         self.stop_button.pack(side='right', padx=(8, 0))
         self.start_button = ttk.Button(header, text='開始測速', command=self.start, style='Start.TButton')
         self.start_button.pack(side='right')
+        self.save_button = ttk.Button(header, text='儲存設定', command=self.save_settings)
+        self.save_button.pack(side='right', padx=(0, 8))
+        self.controls.append((self.save_button, 'normal'))
         body = ttk.Frame(outer)
         body.pack(fill='both', expand=True)
         body.columnconfigure(1, weight=1)
@@ -101,11 +118,23 @@ class MonitorApp:
             entry = ttk.Entry(box, textvariable=self.vars[name], width=17)
             entry.pack(side='right', fill='x', expand=True)
             self.controls.append((entry, 'normal'))
-        ttk.Label(form, text='傳輸方向').grid(row=7, column=0, sticky='w', pady=(12, 3))
-        direction = ttk.Combobox(form, textvariable=self.vars['direction'], state='readonly', width=31,
+        modes = ttk.Frame(form)
+        modes.grid(row=7, column=0, sticky='ew', pady=(10, 3))
+        ttk.Label(modes, text='協定').grid(row=0, column=0, sticky='w')
+        ttk.Label(modes, text='傳輸方向').grid(row=0, column=1, sticky='w', padx=(10, 0))
+        protocol = ttk.Combobox(modes, textvariable=self.vars['protocol'], state='readonly', width=7, values=['TCP', 'UDP'])
+        protocol.grid(row=1, column=0, sticky='ew')
+        self.controls.append((protocol, 'readonly'))
+        direction = ttk.Combobox(modes, textvariable=self.vars['direction'], state='readonly', width=23,
                                  values=['上傳：本機 → server', '下載：server → 本機'])
-        direction.grid(row=8, column=0, sticky='ew')
+        direction.grid(row=1, column=1, sticky='ew', padx=(10, 0))
         self.controls.append((direction, 'readonly'))
+        udp_box = ttk.Frame(form)
+        udp_box.grid(row=8, column=0, sticky='ew', pady=(5, 0))
+        ttk.Label(udp_box, text='UDP Mbps／每條', width=19).pack(side='left')
+        self.udp_entry = ttk.Entry(udp_box, textvariable=self.vars['udp_mbps'], width=17)
+        self.udp_entry.pack(side='right', fill='x', expand=True)
+        self.controls.append((self.udp_entry, 'normal'))
         for row, name, label, callback in [(9, 'iperf', 'iperf3 執行檔', self._pick_iperf),
                                            (12, 'output', '結果資料夾', self._pick_output)]:
             ttk.Label(form, text=label).grid(row=row, column=0, sticky='w', pady=(14, 3))
@@ -166,7 +195,7 @@ class MonitorApp:
         if selected:
             self.vars['output'].set(selected)
 
-    def read_config(self) -> RunConfig:
+    def read_config(self, *, check_executable=True) -> RunConfig:
         try:
             if not self.vars['output'].get().strip():
                 raise ValueError('請選擇結果資料夾。')
@@ -175,16 +204,32 @@ class MonitorApp:
                 port=int(self.vars['port'].get()), duration=int(self.vars['duration'].get()),
                 warmup=float(self.vars['warmup'].get()), threshold=float(self.vars['threshold'].get()),
                 parallel=int(self.vars['parallel'].get()), reverse=self.vars['direction'].get().startswith('下載'),
+                protocol=self.vars['protocol'].get(), udp_mbps=float(self.vars['udp_mbps'].get()),
                 output=Path(self.vars['output'].get()),
-            ).validated()
+            ).validated(check_executable=check_executable)
         except ValueError as exc:
             raise ValueError(f'設定錯誤：{exc}') from exc
+
+    def save_settings(self):
+        if self.active:
+            return
+        try:
+            save_config(self.read_config(check_executable=False), self.settings_path)
+            self.status.set(f'設定已儲存：{self.settings_path}；下次啟動會載入。')
+            self.status_label.configure(foreground='#107c60')
+        except (OSError, ValueError) as exc:
+            self.status.set(f'儲存設定失敗：{exc}')
+            self.status_label.configure(foreground='#c6373e')
+
+    def _update_protocol_state(self):
+        self.udp_entry.configure(state='normal' if not self.active and self.vars['protocol'].get() == 'UDP' else 'disabled')
 
     def _set_running(self, running):
         for widget, original in self.controls:
             widget.configure(state='disabled' if running else original)
         self.start_button.configure(state='disabled' if running else 'normal')
         self.stop_button.configure(state='normal' if running else 'disabled')
+        self._update_protocol_state()
 
     def start(self):
         if self.active:
@@ -307,7 +352,7 @@ class MonitorApp:
         self.ax.set_ylim(0, max(threshold, max((s['mbps'] for s in self.samples), default=100)) * 1.18)
         self.ax.set_xlabel('Time since traffic started (seconds)')
         self.ax.set_ylabel('Throughput (Mbps)')
-        self.ax.set_title(f"{'Download / receiver' if config.reverse else 'Upload / sender'} | {config.server}:{config.port}" if config else 'iperf3 live throughput', loc='left', fontsize=11)
+        self.ax.set_title(f"{config.protocol} | {'Download / receiver' if config.reverse else 'Upload / sender'} | {config.server}:{config.port}" if config else 'iperf3 live throughput', loc='left', fontsize=11)
         self.ax.grid(alpha=0.2)
         self.ax.legend(loc='upper right', fontsize=8)
         self.canvas.draw_idle()

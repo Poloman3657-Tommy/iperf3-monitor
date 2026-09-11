@@ -6,7 +6,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 root = Path(__file__).resolve().parent
 bundle = root / 'build-windows' / 'dist' / 'IperfMonitor'
 required = ['IperfMonitor.exe', '_internal/python312.dll', 'iperf3/iperf3.exe',
-            'iperf3/cygwin1.dll', 'README.md', 'build-manifest.json']
+            'iperf3/cygwin1.dll', 'README.md', 'config.json', 'build-manifest.json']
 for name in required:
     if not (bundle / name).is_file():
         raise RuntimeError(f'Incomplete runtime bundle: {name}')
