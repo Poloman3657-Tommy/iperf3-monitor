@@ -2,8 +2,8 @@
 
 ## 開始使用
 
-1. 將 ZIP **完整解壓縮** 到可寫入的資料夾，例如桌面。
-2. 開啟 `IperfMonitor.exe`。
+1. 將帶版本號的 ZIP **完整解壓縮**到可寫入的資料夾，例如桌面。
+2. 進入對應版本的資料夾，開啟 `IperfMonitor.exe`。
 3. 填寫 Server IP、port，選擇 TCP／UDP 和上傳／下載，按「開始測速」。
 4. 要讓下次啟動沿用目前設定，按右上角「儲存設定」。
 
@@ -69,8 +69,10 @@ UDP 仍以吞吐量判斷 PASS／LOW；丟包與 jitter 保留在 `iperf.log`，
 
 ## 檔案結構
 
+ZIP 與 SHA-256 檔名都包含版本號，例如 `iperf-monitor-windows-x64-v1.3.0.zip` 和 `iperf-monitor-windows-x64-v1.3.0.zip.sha256`。解壓縮的外層資料夾也會包含版本號，內部 EXE 保持原名。
+
 ```text
-IperfMonitor/
+IperfMonitor-v1.3.0/       以 v1.3.0 為例
   IperfMonitor.exe        桌面程式
   config.json             預設／已儲存設定
   _internal/              Python、Tk 與繪圖執行環境

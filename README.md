@@ -6,11 +6,13 @@
 
 到 [最新 Release](https://github.com/Poloman3657-Tommy/iperf3-monitor/releases/latest) 下載：
 
-- [iperf-monitor-windows-x64.zip](https://github.com/Poloman3657-Tommy/iperf3-monitor/releases/latest/download/iperf-monitor-windows-x64.zip)：Windows x64 免安裝包。
-- [SHA-256 校驗碼](https://github.com/Poloman3657-Tommy/iperf3-monitor/releases/latest/download/iperf-monitor-windows-x64.zip.sha256)：檔案完整性檢查。
+- `iperf-monitor-windows-x64-v<版本>.zip`：Windows x64 免安裝包。
+- `iperf-monitor-windows-x64-v<版本>.zip.sha256`：對應版本的 SHA-256 校驗碼。
+
+例如 v1.3.0 的檔名是 `iperf-monitor-windows-x64-v1.3.0.zip`，解壓縮後會建立 `IperfMonitor-v1.3.0` 資料夾。請從上方「最新 Release」選擇需要的版本；歷史版本也使用各自的版本號。
 
 1. 將 ZIP **完整解壓縮**到可寫入的資料夾。
-2. 開啟 `IperfMonitor.exe`。
+2. 進入 `IperfMonitor-v<版本>` 資料夾，開啟 `IperfMonitor.exe`。
 3. 填入 server IP、port，選擇 TCP／UDP 與上傳／下載。
 4. 按「開始測速」；需要結束時按「停止」。
 
