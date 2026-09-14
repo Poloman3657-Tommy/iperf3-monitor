@@ -1,4 +1,4 @@
-# Python 桌面版 iperf3 即時監測
+# 原始碼開發說明
 
 **Windows 不想安裝相依套件：** 使用 [Windows x64 免安裝包](https://github.com/Poloman3657-Tommy/iperf3-monitor/releases/latest/download/iperf-monitor-windows-x64.zip)，完整解壓縮後開啟 `IperfMonitor.exe`。包內已含 Python、Tk、Matplotlib 與 iperf3；不需 pip。詳細步驟見 [Windows 說明](Windows-README.md)。以下是 Python 原始碼版的使用與開發方式。
 
@@ -26,7 +26,7 @@ E:\Herdr\Workspace\iperf-monitor\run-gui.cmd --iperf D:\iperf3.16_64\iperf3.exe
 
 ## 保存設定與 UDP
 
-桌面版啟動時讀取程式旁的 `config.json`。按「儲存設定」後，下次會載入 IP、port、方向、協定、UDP 目標速率、秒數、暖機、門檻、連線數和路徑。Clone 原始碼時可將 [config.example.json](config.example.json) 複製為 `config.json`；也可在介面按儲存建立。Python ZIP 和 Windows ZIP 都附有 `config.json`。
+桌面版啟動時讀取程式旁的 `config.json`。按「儲存設定」後，下次會載入 IP、port、方向、協定、UDP 目標速率、秒數、暖機、門檻、連線數和路徑。Clone 原始碼時可將 [config.example.json](config.example.json) 複製為 `config.json`；也可在介面按儲存建立。Windows 免安裝包已附有 `config.json`。
 
 設定檔支援部分欄位，其餘使用預設；未知／重複欄位、錯誤類型或格式會顯示錯誤並保留原檔。寫入採原子替換，失敗不破壞舊檔。位於程式資料夾內的路徑以相對路徑保存，方便搬移。`config.json` 是個人設定，已加入 `.gitignore`；`run.json` 仍僅記錄每次測試參數。
 
@@ -50,17 +50,17 @@ python gui.py
 
 Ubuntu／macOS 若使用 `python3 gui.py`，上述命令也請改用 `python3`。在 IDE 執行時，請將 Python interpreter 選到已安裝依賴的 `.venv`。新版缺少 Matplotlib 時會列出實際 Python 路徑與精確安裝命令。
 
-解壓縮 `iperf-monitor-python-gui.zip`，保留其中的檔案放在同一資料夾。這是 **Python 原始碼可攜包**，不是免裝 Python 的 EXE。
+開發用途請 clone 此 repository，並在 repository 根目錄建立虛擬環境；一般使用請下載 Windows 免安裝包。
 
 需要：
 
 - Python **3.11 或以上**，含 Tkinter；本機驗證版本為 Python 3.12、Tk 8.6。
 - `requirements.txt` 指定的 Matplotlib。
-- 符合目標作業系統與 CPU 架構的 iperf3；Windows 需配套 DLL。iperf3 不包含在 ZIP 中。
+- 符合目標作業系統與 CPU 架構的 iperf3；Windows 需配套 DLL。Git repository 不包含 iperf3 二進位檔；Windows 免安裝包則已包含。
 
 ### Windows（第一次）
 
-在解壓縮資料夾的 CMD 執行：
+在 repository 根目錄的 CMD 執行：
 
 ```bat
 python -m venv .venv
@@ -73,7 +73,7 @@ run-gui.cmd
 
 ### Ubuntu／macOS（第一次）
 
-在解壓縮資料夾的終端機執行：
+在 repository 根目錄的終端機執行：
 
 ```sh
 python3 -m venv .venv

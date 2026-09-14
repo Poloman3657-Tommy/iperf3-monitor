@@ -17,7 +17,6 @@ node_modules/
 *.zip
 *.zip.sha256
 /portable/*
-!/portable/iperf-monitor.html
 !/portable/README.md
 
 # Session-specific planning and validation notes
