@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 import platform
@@ -34,6 +35,8 @@ from gui_runner import RunConfig, RunOutcome, app_directory, find_iperf, run_tes
 from config_store import load_config, save_config
 from charting import draw_throughput
 from viewport import TimeViewport, elapsed_label
+from mcs import LowEventGate, McsDispatcher, result_label
+from mcs_dialog import SshDialog
 import monitor
 
 TIME_LABELS = {'自動': 'auto', '秒': 'seconds', '分': 'minutes', '時': 'hours', '天': 'days'}
@@ -58,6 +61,11 @@ class MonitorApp:
         self.output = None
         self.last_outcome = None
         self.config = None
+        self.ssh_settings, self.ssh_password = defaults.ssh, ''
+        self.ssh_dialog = self.dispatcher = None
+        self.mcs_results = {}
+        self.low_gate = LowEventGate()
+        self.mcs_status = tk.StringVar(value='SSH 未啟用；IP 空白時不連線。')
         self.started_at = self.last_draw = 0.0
         self.controls = []
         self.viewport = TimeViewport()
@@ -113,6 +121,9 @@ class MonitorApp:
         self.save_button = ttk.Button(header, text='儲存設定', command=self.save_settings)
         self.save_button.pack(side='right', padx=(0, 8))
         self.controls.append((self.save_button, 'normal'))
+        self.ssh_button = ttk.Button(header, text='SSH / MCS 設定', command=self.edit_ssh)
+        self.ssh_button.pack(side='right', padx=(0, 8))
+        self.controls.append((self.ssh_button, 'normal'))
         body = ttk.Frame(outer)
         body.pack(fill='both', expand=True)
         body.columnconfigure(1, weight=1)
@@ -175,6 +186,14 @@ class MonitorApp:
         chart_tab, log_tab = ttk.Frame(tabs), ttk.Frame(tabs)
         tabs.add(chart_tab, text='即時曲線與低速事件')
         tabs.add(log_tab, text='iperf3 原始輸出')
+        mcs_tab = ttk.Frame(tabs)
+        tabs.add(mcs_tab, text='低速 MCS 資料')
+        ttk.Label(mcs_tab, textvariable=self.mcs_status, wraplength=700).pack(fill='x', padx=8, pady=8)
+        self.mcs_detail = tk.Text(mcs_tab, wrap='word', state='disabled', height=15)
+        mcs_scroll = ttk.Scrollbar(mcs_tab, command=self.mcs_detail.yview)
+        self.mcs_detail.configure(yscrollcommand=mcs_scroll.set)
+        mcs_scroll.pack(side='right', fill='y')
+        self.mcs_detail.pack(fill='both', expand=True)
         chart_options = ttk.Frame(chart_tab, padding=(6, 5))
         chart_options.pack(fill='x')
         ttk.Label(chart_options, text='時間單位').pack(side='left')
@@ -204,10 +223,12 @@ class MonitorApp:
         self.timeline_scroll.pack(fill='x', padx=6, pady=(1, 4))
         event_box = ttk.Frame(chart_tab)
         event_box.pack(fill='x', padx=5)
-        self.tree = ttk.Treeview(event_box, columns=('start', 'end', 'seconds', 'minimum'), show='headings', height=5, selectmode='browse')
+        self.tree = ttk.Treeview(event_box, columns=('start', 'end', 'seconds', 'minimum', 'mcs'), show='headings', height=5, selectmode='browse')
         for col, title in [('start', '開始（秒）'), ('end', '結束（秒）'), ('seconds', '持續（秒）'), ('minimum', '最低 Mbps')]:
             self.tree.heading(col, text=title)
             self.tree.column(col, width=105, anchor='e')
+        self.tree.heading('mcs', text='MCS 1 / MCS 2')
+        self.tree.column('mcs', width=175, minwidth=100)
         event_scroll = ttk.Scrollbar(event_box, orient='vertical', command=self.tree.yview)
         self.tree.configure(yscrollcommand=event_scroll.set)
         event_scroll.pack(side='right', fill='y')
@@ -247,7 +268,7 @@ class MonitorApp:
                 warmup=float(self.vars['warmup'].get()), threshold=float(self.vars['threshold'].get()),
                 parallel=int(self.vars['parallel'].get()), reverse=self.vars['direction'].get().startswith('下載'),
                 protocol=self.vars['protocol'].get(), udp_mbps=float(self.vars['udp_mbps'].get()),
-                time_unit=self._selected_time_unit(),
+                time_unit=self._selected_time_unit(), ssh=self.ssh_settings,
                 output=Path(self.vars['output'].get()),
             ).validated(check_executable=check_executable)
         except ValueError as exc:
@@ -278,16 +299,53 @@ class MonitorApp:
         self.stop_button.configure(state='normal' if running else 'disabled')
         self._update_protocol_state()
 
+    def edit_ssh(self):
+        if self.active or (self.dispatcher and self.dispatcher.busy):
+            return
+        if self.ssh_dialog and not self.ssh_dialog.closed:
+            self.ssh_dialog.window.lift()
+            return
+        def apply(settings, password):
+            self.ssh_settings, self.ssh_password = settings, password
+            self.mcs_status.set(f'SSH：{settings.host}:{settings.port} / {settings.vap}' if settings.active
+                                else 'SSH 未啟用；IP 空白時不連線。')
+        self.ssh_dialog = SshDialog(self.root, self.ssh_settings, self.ssh_password,
+                                    self.settings_path.parent / 'ssh_known_hosts', apply)
+
+    def _show_mcs(self, result):
+        self.mcs_detail.configure(state='normal')
+        self.mcs_detail.delete('1.0', 'end')
+        self.mcs_detail.insert('end', json.dumps(result, ensure_ascii=False, indent=2) if result else '此事件未啟用 SSH 擷取。')
+        self.mcs_detail.configure(state='disabled')
+
+    def _receive_mcs(self, result):
+        index = result['event_id']
+        self.mcs_results[index] = result
+        item = f'event-{index}'
+        if self.tree.exists(item):
+            self.tree.set(item, 'mcs', result_label(result))
+        self.mcs_status.set(f"事件 {index + 1}：{result_label(result)}" +
+                            (f"；{result['error']}" if result.get('error') else ''))
+        selected = self.tree.selection()
+        if not selected or selected[0] == item:
+            self._show_mcs(result)
+
     def start(self):
-        if self.active:
+        if self.active or (self.dispatcher and self.dispatcher.busy):
             return
         try:
             config = self.read_config()
+            if config.ssh.active and (not self.ssh_password or any(c in self.ssh_password for c in ('\r', '\n', '\0'))):
+                raise ValueError('請在「SSH / MCS 設定」輸入本次 SSH/sudo 密碼（不可包含換行）。')
         except ValueError as exc:
             self.status.set(str(exc))
             self.status_label.configure(foreground='#c6373e')
             return
         self.config, self.samples, self.output, self.last_outcome = config, [], None, None
+        self.dispatcher = None
+        self.low_gate, self.mcs_results = LowEventGate(), {}
+        self._show_mcs(None)
+        self.mcs_status.set('等待暖機後的低速事件。' if config.ssh.active else 'SSH 未啟用；IP 空白時不連線。')
         self.viewport.show_all()
         self.drag_origin = None
         self.event_records, self.tree_rows = [], 0
@@ -317,6 +375,8 @@ class MonitorApp:
         self.worker.start()
 
     def stop(self):
+        if self.dispatcher:
+            self.dispatcher.close()
         if self.active:
             self.stop_event.set()
             self.stop_button.configure(state='disabled')
@@ -343,11 +403,21 @@ class MonitorApp:
             if kind == 'started':
                 self.output = value
                 self.path_status.set(f'保存位置：{value}')
+                if self.config.ssh.active:
+                    self.dispatcher = McsDispatcher(self.config.ssh, self.ssh_password, value, self.events,
+                                                   self.settings_path.parent / 'ssh_known_hosts')
+                    if self.stop_event.is_set():
+                        self.dispatcher.close()
             elif kind == 'line':
                 self._append_log(value)
             elif kind == 'sample':
                 self.samples.append(value)
+                event_id = self.low_gate.observe(value['status'], value['start'], value['end'])
+                if event_id is not None and self.dispatcher:
+                    self.dispatcher.submit(event_id, value)
                 changed = True
+            elif kind == 'mcs':
+                self._receive_mcs(value)
             elif kind == 'finished':
                 self._finish(value)
                 changed = False
@@ -362,6 +432,13 @@ class MonitorApp:
                 self._draw()
             if not self.samples and not self.stop_event.is_set():
                 self.status.set(f'等待 iperf3 輸出… {time.monotonic() - self.started_at:.0f} 秒')
+        if not self.active:
+            pending = self.dispatcher is not None and self.dispatcher.busy
+            self.start_button.configure(state='disabled' if pending else 'normal')
+            self.ssh_button.configure(state='disabled' if pending else 'normal')
+            if self.closing and not pending:
+                self._destroy()
+                return
         self.root.after(100, self._poll)
 
     def _update_metrics(self):
@@ -382,6 +459,7 @@ class MonitorApp:
         for index in range(max(0, self.tree_rows-1), len(self.event_records)):
             event = self.event_records[index]
             values = tuple(f'{event[key]:.3f}' for key in ('start', 'end', 'seconds', 'min_mbps'))
+            values += (result_label(self.mcs_results.get(index)),)
             item = f'event-{index}'
             if self.tree.exists(item):
                 self.tree.item(item, values=values)
@@ -453,6 +531,7 @@ class MonitorApp:
         if index >= len(self.event_records):
             return
         event = self.event_records[index]
+        self._show_mcs(self.mcs_results.get(index))
         self.viewport.focus_event(event['start'], event['end'], self._timeline_end())
         self._draw()
 
@@ -524,6 +603,8 @@ class MonitorApp:
             self.status.set(f'無法開啟資料夾：{exc}；可手動開啟 {self.output}')
 
     def close(self):
+        if self.closed:
+            return
         if self.active:
             self.closing = True
             self.stop()
@@ -531,6 +612,17 @@ class MonitorApp:
             self._destroy()
 
     def _destroy(self):
+        if self.dispatcher:
+            self.dispatcher.close()
+            if self.dispatcher.busy:
+                # Keep pumping Tk until the bounded connect/command writes its final record.
+                self.closing = True
+                self.status.set('關閉中，等待 SSH 取消結果儲存…')
+                self._set_running(True)
+                self.stop_button.configure(state='disabled')
+                return
+        if self.ssh_dialog and not self.ssh_dialog.closed:
+            self.ssh_dialog.close()
         self.closed = True
         # Cancel schedules only. Each widget deletes its own callback commands on destroy;
         # root.after_cancel would wrongly delete a Matplotlib child widget's command twice.

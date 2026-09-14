@@ -25,6 +25,7 @@ node_modules/
 /*VALIDATION.md
 /release-notes.md
 /config.json
+/ssh_known_hosts
 
 # Local editor / OS files
 .DS_Store

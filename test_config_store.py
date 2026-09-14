@@ -8,9 +8,25 @@ import unittest
 from unittest.mock import patch
 
 from gui_runner import RunConfig
+from mcs import SshSettings
 
 
 class ConfigStoreTests(unittest.TestCase):
+    def test_ssh_roundtrip_blank_host_and_credentials_are_never_config(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'config.json'
+            cfg = RunConfig(iperf='', ssh=SshSettings(enabled=True, host='', port=2222, vap='wlan0.1'))
+            self.store.save_config(cfg, path)
+            loaded = self.store.load_config(path)
+            self.assertEqual(loaded.ssh, cfg.ssh)
+            self.assertFalse(loaded.ssh.active)
+            data = json.loads(path.read_text(encoding='utf-8'))
+            self.assertNotIn('password', data['ssh'])
+            data['ssh']['password'] = 'not-a-real-password'
+            path.write_text(json.dumps(data), encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, 'password'):
+                self.store.load_config(path)
+
     def setUp(self):
         self.assertIsNotNone(importlib.util.find_spec('config_store'), 'Settings storage is not implemented')
         import config_store

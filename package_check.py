@@ -18,6 +18,8 @@ def check_package(report_path: str) -> int:
     try:
         import tkinter as tk
         import matplotlib
+        import paramiko
+        from mcs import SshSettings, parse_mcs
         from gui import MonitorApp
         from gui_runner import app_directory, find_iperf
         from config_store import load_config
@@ -26,6 +28,7 @@ def check_package(report_path: str) -> int:
         if not executable:
             raise RuntimeError('Bundled iperf3 was not found')
         result.update(iperf=executable, matplotlib=matplotlib.__version__,
+                      paramiko=paramiko.__version__,
                       matplotlib_path=matplotlib.__file__, app_directory=str(app_directory()))
         # A TCP-available ephemeral port may be reserved for UDP on Windows.
         for _ in range(32):
@@ -52,6 +55,9 @@ def check_package(report_path: str) -> int:
         root.report_callback_exception = lambda kind, value, tb: errors.append(str(value))
         preferences = report.parent / 'package-test-config.json'
         app = MonitorApp(root, settings_path=preferences)
+        # Even enabled=true must never connect when the optional IP is blank.
+        app.ssh_settings = SshSettings(enabled=True, host='')
+        app.ssh_password = 'package-check-runtime-only'
         # Use the same buttons and event loop as the normal app, in continuous download mode.
         for key, value in {'server': '127.0.0.1', 'port': port, 'duration': 0, 'warmup': 1,
                            'protocol': 'UDP', 'udp_mbps': 25, 'parallel': 1,
@@ -93,6 +99,10 @@ def check_package(report_path: str) -> int:
             raise RuntimeError('Desktop raw throughput output is not in Mbits/sec')
         if not outcome.summary['low_samples']:
             raise RuntimeError('UDP throughput was not classified below the test threshold')
+        if app.dispatcher is not None or (outcome.output / 'mcs-events.jsonl').exists():
+            raise RuntimeError('Blank SSH IP unexpectedly started diagnostics')
+        if parse_mcs('-1 : MCS index\n0 : MCS index\n11 : MCS index') != [0, 11]:
+            raise RuntimeError('MCS parsing is incorrect')
         app.tree.selection_set('event-0')
         root.update()
         event = app.event_records[0]
@@ -106,13 +116,15 @@ def check_package(report_path: str) -> int:
             raise RuntimeError('Smooth throughput curve was not rendered')
         app.save_button.invoke()
         restored = load_config(preferences)
+        if restored.ssh.active or not restored.ssh.enabled or 'package-check-runtime-only' in preferences.read_text(encoding='utf-8'):
+            raise RuntimeError('SSH settings/password isolation failed')
         if (restored.protocol != 'UDP' or restored.udp_mbps != 25 or restored.parallel != 1 or
                 not restored.reverse or restored.time_unit != 'minutes'):
             raise RuntimeError('Saved settings did not round-trip correctly')
         result.update(passed=True, samples=len(outcome.samples), ui_event_pumps=pumps,
                       output=str(outcome.output), summary=outcome.summary, config_roundtrip=True,
                       chart_time_unit=restored.time_unit, curve_points=len(curve.get_xdata()),
-                      navigation_verified=True)
+                      navigation_verified=True, blank_ssh_verified=True)
         return_code = 0
     except Exception:
         result['error'] = traceback.format_exc()

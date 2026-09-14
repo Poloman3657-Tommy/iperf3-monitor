@@ -7,7 +7,7 @@
 3. 填寫 Server IP、port，選擇 TCP／UDP 和上傳／下載，按「開始測速」。
 4. 要讓下次啟動沿用目前設定，按右上角「儲存設定」。
 
-已包含 Python、Tkinter/Tcl/Tk、Matplotlib、數值及繪圖依賴，以及 iperf3 3.16 與其 Windows DLL。**不需要另外安裝 Python、pip 或 Matplotlib。** 程式會自動選取 `iperf3` 子資料夾中的執行檔。
+已包含 Python、Tkinter/Tcl/Tk、Matplotlib、Paramiko SSH 及相關依賴，以及 iperf3 3.16 與其 Windows DLL。**不需要另外安裝 Python、pip 或套件。** 程式會自動選取 `iperf3` 子資料夾中的執行檔。
 
 預設 `192.168.137.57:4477`、上傳、60 秒、忽略前 20 秒、低於 100 Mbps 標記。測試秒數填 **0** 可持續測試，直到按停止、關閉視窗或發生錯誤。結果預設存於程式旁的 `gui-results`，也可在介面另選資料夾。
 
@@ -52,7 +52,14 @@
   "udp_mbps": 1000,
   "time_unit": "auto",
   "iperf": "",
-  "output": "gui-results"
+  "output": "gui-results",
+  "ssh": {
+    "enabled": false,
+    "host": "",
+    "port": 22,
+    "username": "technician",
+    "vap": "wlan2.2"
+  }
 }
 ```
 
@@ -67,12 +74,30 @@ UDP 仍以吞吐量判斷 PASS／LOW；丟包與 jitter 保留在 `iperf.log`，
 
 本次已驗證 Windows client 對 NUC Linux server 的雙條 UDP 下載。包內 Cygwin iperf3 3.16 若作為 **Windows server**，多條 UDP 連線可能失敗；該情境請用單條連線或 Linux server。程式會保留原始錯誤，不會偷偷改成 TCP。
 
+## SSH / MCS 設定
+
+1. 按右上角「SSH / MCS 設定」，勾選「低速事件發生時擷取 MCS」。
+2. 填寫設備的 SSH IP、port（預設 22）、帳號（預設 `technician`）及 VAP（例如 `wlan2.2`）。**IP 空白或未勾選啟用，都不會建立 SSH 連線**，包括「測試 SSH/MCS」按鈕。
+3. 輸入本次 SSH／sudo 共用密碼。密碼欄遮蔽顯示，只保留在程式記憶體，不寫入設定或測試紀錄。
+4. 按「測試 SSH/MCS」：首次連線會顯示 SHA-256 主機指紋，請與設備核對後確認。信任記錄存於程式旁的 `ssh_known_hosts`；自動低速擷取不會直接信任未知主機。主機金鑰改變時拒絕連線，需確認設備變更後處理舊記錄。此確認只信任主機身分，不修改設備設定。
+5. 按「套用」回主視窗；需要保存 IP／port／帳號／VAP／啟用狀態時，再按「儲存設定」。下次啟動仍需輸入密碼。舊版設定缺少 `ssh` 時預設關閉。
+
+暖機後每次低速事件開始時，背景執行 `dwpal_cli <VAP> peerlist`，對所有 MAC 執行 `dwpal_cli <VAP> peerratesinfo <MAC>`，解析最後兩筆 `MCS index`。例如三筆為 `-1、0、11`，MCS 1＝0、MCS 2＝11；欄位名稱只代表最後兩筆的順序，不推定 TX／RX。以同一密碼經標準輸入交給 `sudo -S -p '' -- sh -lc ...` 取得 root 權限，效果等同以 root 執行這兩種查詢，不需要互動式 `sudo su`。設備必須允許無終端的 sudo 密碼驗證，且 root 登入 shell 可找到 `dwpal_cli`。
+
+連續低速只查詢一次，恢復正常後再次低速才重抓；資料中断也會依事件表分成新事件。每次最多一個背景查詢，正在查詢時再有新事件會記錄 `SKIPPED_BUSY`，避免查詢累積。連線／驗證各階段有 7 秒逾時，連線後所有 dwpal 查詢共享 25 秒期限，每條輸出最多 2 MiB。
+
+事件表顯示 MCS 或錯誤狀態。選取事件，再開啟「低速 MCS 資料」頁籤可查看詳細 JSON。結果資料夾內的 `mcs-events.jsonl` 逐行追加開始／完成紀錄，包含 `event_id`（從 0 開始，對應事件表順序）、觸發區間與速率、擷取時間、MAC、MCS 和原始輸出。狀態包括 `RUNNING`、`OK`、`NO_PEERS`、`ERROR`、`SKIPPED_BUSY`、`CANCELLED`；同一事件以最後一筆為準。IP 空白不建立此檔案。
+
+SSH 失敗或沒有 peer 會明確記錄，吞吐量測試繼續，PASS／LOW 仍只看速率。手動停止／關閉會取消查詢；定時測試自然結束時，已開始的查詢可完成，期間「開始測速」暫時停用。MCS 是查詢當下的狀態，可能晚於低速取樣，不代表兩者精確同步。手動「測試 SSH/MCS」結果僅顯示於設定視窗。
+
+升級時可保留自己的 `config.json` 與 `ssh_known_hosts`。此功能已使用本機模擬 SSH 設備及真正 Tk 介面驗證，尚未對你的設備實測。
+
 ## 檔案結構
 
-ZIP 與 SHA-256 檔名都包含版本號，例如 `iperf-monitor-windows-x64-v1.3.0.zip` 和 `iperf-monitor-windows-x64-v1.3.0.zip.sha256`。解壓縮的外層資料夾也會包含版本號，內部 EXE 保持原名。
+ZIP 與 SHA-256 檔名都包含版本號，例如 `iperf-monitor-windows-x64-v1.4.0.zip` 和 `iperf-monitor-windows-x64-v1.4.0.zip.sha256`。解壓縮的外層資料夾也會包含版本號，內部 EXE 保持原名。
 
 ```text
-IperfMonitor-v1.3.0/       以 v1.3.0 為例
+IperfMonitor-v1.4.0/       以 v1.4.0 為例
   IperfMonitor.exe        桌面程式
   config.json             預設／已儲存設定
   _internal/              Python、Tk 與繪圖執行環境

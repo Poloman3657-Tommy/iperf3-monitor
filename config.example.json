@@ -11,5 +11,12 @@
   "udp_mbps": 1000,
   "time_unit": "auto",
   "iperf": "",
-  "output": "gui-results"
+  "output": "gui-results",
+  "ssh": {
+    "enabled": false,
+    "host": "",
+    "port": 22,
+    "username": "technician",
+    "vap": "wlan2.2"
+  }
 }

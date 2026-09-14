@@ -15,6 +15,7 @@ import threading
 
 import monitor
 from charting import TIME_UNITS
+from mcs import SshSettings, coerce_settings
 
 
 def app_directory() -> Path:
@@ -43,6 +44,7 @@ class RunConfig:
     protocol: str = 'TCP'
     udp_mbps: float = 1000
     time_unit: str = 'auto'
+    ssh: SshSettings = field(default_factory=SshSettings)
     output: Path = field(default_factory=lambda: app_directory() / 'gui-results')
 
     def validated(self, *, check_executable: bool = True) -> RunConfig:
@@ -83,7 +85,7 @@ class RunConfig:
         executable = shutil.which(str(Path(self.iperf.strip()).expanduser())) if self.iperf.strip() else None
         if not executable and check_executable:
             raise ValueError('找不到可執行的 iperf3，請用「瀏覽」選擇本機執行檔。')
-        return replace(self, server=server, protocol=protocol,
+        return replace(self, server=server, protocol=protocol, ssh=coerce_settings(self.ssh),
                        iperf=str(Path(executable).resolve()) if executable else self.iperf.strip(),
                        output=Path(self.output).expanduser().resolve())
 

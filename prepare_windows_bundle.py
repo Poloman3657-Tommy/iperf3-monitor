@@ -24,7 +24,8 @@ licenses = bundle / 'licenses'
 licenses.mkdir(exist_ok=True)
 versions = {}
 packages = ['matplotlib', 'numpy', 'pillow', 'contourpy', 'cycler', 'fonttools',
-            'kiwisolver', 'packaging', 'pyparsing', 'python-dateutil', 'six', 'PyInstaller']
+            'kiwisolver', 'packaging', 'pyparsing', 'python-dateutil', 'six', 'PyInstaller',
+            'paramiko', 'bcrypt', 'cryptography', 'invoke', 'pynacl', 'cffi', 'pycparser']
 for name in packages:
     dist = distribution(name)
     versions[name] = dist.version
@@ -61,7 +62,7 @@ for name, url in remote.items():
     shutil.copy2(cached, licenses / name)
     print('License:', name)
 sources = ['desktop_entry.py', 'package_check.py', 'gui.py', 'gui_runner.py', 'config_store.py',
-           'config.example.json', 'charting.py', 'viewport.py', 'monitor.py', 'build-windows.spec']
+           'config.example.json', 'charting.py', 'viewport.py', 'monitor.py', 'mcs.py', 'mcs_dialog.py', 'build-windows.spec']
 manifest = {
     'built_at': datetime.now().astimezone().isoformat(), 'platform': 'Windows x64',
     'python': sys.version, 'dependencies': versions,
