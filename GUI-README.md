@@ -97,7 +97,7 @@ macOS 請使用含可用 Tkinter 的 Python；可先用 `python3 -m tkinter` 檢
 - 上傳是本機 sender 的發送速率；下載是本機 receiver 的接收速率。多流只判斷 SUM 合計。
 - 正常完成且沒有低速才是 PASS；LOW 表示完成但有低速；ERROR 表示測試／輸出失敗；INTERRUPTED 表示手動停止，NO_DATA 表示沒有暖機後資料。
 - 每次使用不同時間戳資料夾，包含 `iperf.log`、`samples.csv`、`summary.json`、`low_events.csv`、`run.json`、`throughput.png`。log 與 samples.csv 在測試期間即時寫入，其餘在結束時儲存。
-- GUI 原始輸出顯示最近 1000 行，事件表顯示最近 100 次；完整資料仍存在檔案。
+- GUI 原始輸出顯示最近 1000 行；事件表保留全部低速事件並支援捲動與點選定位。完整資料仍存在檔案。
 - 「停止」先終止本程式啟動的 iperf3，再排空已收到的輸出，不影響其他 iperf3 程序。錯誤訊息保留在狀態列與報告中。
 - 首次連線 timeout 為 5 秒；非零測試秒數的整體期限為設定秒數加 20 秒。秒數為 0 時取消總時間限制，但仍保留錯誤處理與停止功能。停止排空期限另設 5 秒。
 
@@ -107,12 +107,14 @@ macOS 請使用含可用 Tkinter 的 Python；可先用 `python3 -m tkinter` 檢
 - `gui_runner.py`：不可變設定、路徑驗證、背景測速；不呼叫 Tk。
 - `config_store.py`：設定檔驗證、相對路徑與原子儲存。
 - `charting.py`：即時圖／PNG 共用的時間刻度、原始取樣標記與不超調的平滑連線。
+- `viewport.py`：全部／歷史／跟隨模式、橫向縮放與捲動、低速事件定位。
 - `monitor.py`：與既有 CLI 共用解析、門檻判定、低速事件及檔案輸出；靜態圖使用獨立 Agg Figure，不切換 Tk 的 backend。
 
 工作區測試命令：
 
 ```bat
-..\.venv\Scripts\python.exe -m unittest -v test_charting test_config_store test_gui_runner test_monitor
+..\.venv\Scripts\python.exe -m unittest -v test_viewport test_charting test_config_store test_gui_runner test_monitor
+..\.venv\Scripts\python.exe validate_navigation.py
 ..\.venv\Scripts\python.exe validate_settings_gui.py --iperf D:\iperf3.16_64\iperf3.exe
 ..\.venv\Scripts\python.exe validate_gui.py --iperf D:\iperf3.16_64\iperf3.exe
 ..\.venv\Scripts\python.exe validate_gui.py --iperf D:\iperf3.16_64\iperf3.exe --close-only
@@ -120,6 +122,6 @@ macOS 請使用含可用 Tkinter 的 Python；可先用 `python3 -m tkinter` 檢
 ..\.venv\Scripts\python.exe validate_gui.py --iperf D:\iperf3.16_64\iperf3.exe --live --udp
 ```
 
-27 項單元／子程序測試通過，涵蓋設定檔錯誤與原子儲存、相對路徑搬移、TCP／UDP 命令、暖機／門檻及停止保存。真正 Tk 測試已驗證保存設定後重新啟動、協定欄位狀態與錯誤呈現。NUC UDP 雙條下載測試共 24 秒，每條目標 25 Mbps，暖機後平均約 50.000 Mbps，4 個低速取樣合併成 1 次事件。重建的 Windows EXE 已在隔離 Python 路徑的資料夾驗證 UDP 持續模式、PNG 及設定重讀。Ubuntu／macOS 尚未有原生 GUI 實測。
+39 項單元／子程序測試通過，涵蓋設定、TCP／UDP、取樣判定、停止保存、時間單位、曲線、縮放與拖移邊界。真正 Tk/Matplotlib 操作驗證使用四天人工資料及 173 次低速事件，確認滾輪、拖移回原位、水平捲軸、重複事件定位、歷史範圍保持及跟隨模式；這不是多天耐久測試。Windows EXE 的真實回環測試亦確認新取樣不會重設歷史檢視，且低速事件可定位。Ubuntu／macOS 尚未有原生 GUI 實測。
 
 2026-09-11 以 GUI 流程實測 NUC `192.168.137.57:4477`，下載 60 秒，前 20 秒忽略：最低 **496.441 Mbps**，加權平均 **850.017 Mbps**，低速 **0 次**，結果 PASS。這只代表該次觀察，長期監測可增加秒數。

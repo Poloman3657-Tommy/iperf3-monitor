@@ -33,6 +33,7 @@ except ModuleNotFoundError as exc:
 from gui_runner import RunConfig, RunOutcome, app_directory, find_iperf, run_test
 from config_store import load_config, save_config
 from charting import draw_throughput
+from viewport import TimeViewport, elapsed_label
 import monitor
 
 TIME_LABELS = {'自動': 'auto', '秒': 'seconds', '分': 'minutes', '時': 'hours', '天': 'days'}
@@ -59,6 +60,13 @@ class MonitorApp:
         self.config = None
         self.started_at = self.last_draw = 0.0
         self.controls = []
+        self.viewport = TimeViewport()
+        self.drag_origin = None
+        self.drag_moved = False
+        self.event_records = []
+        self.tree_rows = 0
+        self.view_status = tk.StringVar(value='')
+        self.event_caption = tk.StringVar(value='低速事件：0 次；點選事件可放大查看。')
         self.vars = {name: tk.StringVar(value=str(value)) for name, value in {
             'iperf': iperf or defaults.iperf or find_iperf(), 'server': defaults.server, 'port': defaults.port,
             'duration': defaults.duration, 'warmup': defaults.warmup, 'threshold': defaults.threshold,
@@ -174,17 +182,39 @@ class MonitorApp:
         self.time_unit_combo = ttk.Combobox(chart_options, textvariable=self.vars['time_unit'],
                                            values=list(TIME_LABELS), width=7, state='readonly')
         self.time_unit_combo.pack(side='left', padx=(8, 12))
-        ttk.Label(chart_options, text='曲線連接取樣點；警示仍依原始取樣判定。').pack(side='left')
+        ttk.Label(chart_options, text='滾輪縮放、左鍵拖移；點選低速事件可定位。').pack(side='left')
+        navigation = ttk.Frame(chart_tab, padding=(6, 2))
+        navigation.pack(fill='x')
+        ttk.Button(navigation, text='＋', width=3, command=lambda: self.zoom_view(.5)).pack(side='left')
+        ttk.Button(navigation, text='－', width=3, command=lambda: self.zoom_view(2)).pack(side='left', padx=3)
+        self.all_button = ttk.Button(navigation, text='顯示全部', command=self.show_all)
+        self.all_button.pack(side='left', padx=3)
+        self.follow_button = ttk.Button(navigation, text='跟隨最新', command=self.follow_latest)
+        self.follow_button.pack(side='left', padx=3)
+        ttk.Label(navigation, textvariable=self.view_status).pack(side='left', padx=5)
         self.figure = Figure(figsize=(8, 4.4), dpi=100, layout='constrained')
         self.ax = self.figure.subplots()
         self.canvas = FigureCanvasTkAgg(self.figure, master=chart_tab)
         self.canvas.get_tk_widget().pack(fill='both', expand=True)
-        self.tree = ttk.Treeview(chart_tab, columns=('start', 'end', 'seconds', 'minimum'), show='headings', height=5)
+        self.canvas.mpl_connect('scroll_event', self._on_wheel)
+        self.canvas.mpl_connect('button_press_event', self._on_drag_start)
+        self.canvas.mpl_connect('motion_notify_event', self._on_drag_move)
+        self.canvas.mpl_connect('button_release_event', self._on_drag_end)
+        self.timeline_scroll = ttk.Scrollbar(chart_tab, orient='horizontal', command=self._on_timeline_scroll)
+        self.timeline_scroll.pack(fill='x', padx=6, pady=(1, 4))
+        event_box = ttk.Frame(chart_tab)
+        event_box.pack(fill='x', padx=5)
+        self.tree = ttk.Treeview(event_box, columns=('start', 'end', 'seconds', 'minimum'), show='headings', height=5, selectmode='browse')
         for col, title in [('start', '開始（秒）'), ('end', '結束（秒）'), ('seconds', '持續（秒）'), ('minimum', '最低 Mbps')]:
             self.tree.heading(col, text=title)
             self.tree.column(col, width=105, anchor='e')
-        self.tree.pack(fill='x', padx=5)
-        ttk.Label(chart_tab, text='事件表顯示最近 100 次；完整事件與原始輸出皆自動存檔。').pack(anchor='w', padx=5, pady=4)
+        event_scroll = ttk.Scrollbar(event_box, orient='vertical', command=self.tree.yview)
+        self.tree.configure(yscrollcommand=event_scroll.set)
+        event_scroll.pack(side='right', fill='y')
+        self.tree.pack(side='left', fill='x', expand=True)
+        self.tree.bind('<<TreeviewSelect>>', self._on_event_selected)
+        self.tree.bind('<ButtonRelease-1>', self._on_event_clicked)
+        ttk.Label(chart_tab, textvariable=self.event_caption).pack(anchor='w', padx=5, pady=4)
         self.log = tk.Text(log_tab, wrap='none', state='disabled', height=18)
         scroll = ttk.Scrollbar(log_tab, orient='vertical', command=self.log.yview)
         self.log.configure(yscrollcommand=scroll.set)
@@ -258,6 +288,11 @@ class MonitorApp:
             self.status_label.configure(foreground='#c6373e')
             return
         self.config, self.samples, self.output, self.last_outcome = config, [], None, None
+        self.viewport.show_all()
+        self.drag_origin = None
+        self.event_records, self.tree_rows = [], 0
+        self.tree.delete(*self.tree.get_children())
+        self.event_caption.set('低速事件：0 次；點選事件可放大查看。')
         self.stop_event = threading.Event()
         self.events = queue.Queue()
         self.active = True
@@ -342,16 +377,102 @@ class MonitorApp:
         for key, source in [('minimum', 'min_mbps'), ('average', 'average_mbps')]:
             self.metrics[key].set('—' if summary[source] is None else f'{summary[source]:,.3f}')
         self.metrics['low'].set(f"{summary['low_seconds']:.2f}")
-        self.tree.delete(*self.tree.get_children())
-        for event in summary['events'][-100:]:
-            self.tree.insert('', 'end', values=tuple(f'{event[key]:.3f}' for key in ('start', 'end', 'seconds', 'min_mbps')))
+        self.event_records = summary['events']
+        # Stable row IDs preserve selection and scroll position as later events arrive.
+        for index in range(max(0, self.tree_rows-1), len(self.event_records)):
+            event = self.event_records[index]
+            values = tuple(f'{event[key]:.3f}' for key in ('start', 'end', 'seconds', 'min_mbps'))
+            item = f'event-{index}'
+            if self.tree.exists(item):
+                self.tree.item(item, values=values)
+            else:
+                self.tree.insert('', 'end', iid=item, values=values)
+        self.tree_rows = len(self.event_records)
+        self.event_caption.set(f'低速事件：{self.tree_rows} 次（全部保留）；點選事件可放大查看。')
+
+    def _timeline_end(self):
+        return self.samples[-1]['end'] if self.samples else 60.0
+
+    def zoom_view(self, factor, anchor=None):
+        end = self._timeline_end()
+        left, right = self.viewport.limits(end)
+        self.viewport.zoom(factor, (left+right)/2 if anchor is None else anchor, end)
+        self._draw()
+
+    def show_all(self):
+        self.viewport.show_all()
+        self._draw()
+
+    def follow_latest(self):
+        self.viewport.follow_latest(self._timeline_end())
+        self._draw()
+
+    def _on_wheel(self, event):
+        if event.inaxes is self.ax and event.xdata is not None:
+            self.zoom_view(.8 ** max(-10, min(10, event.step)), event.xdata)
+
+    def _on_drag_start(self, event):
+        if event.inaxes is self.ax and event.button == 1:
+            left, right = self.viewport.limits(self._timeline_end())
+            self.drag_origin = (event.x, left, right, max(1, self.ax.bbox.width))
+            self.drag_moved = False
+
+    def _on_drag_move(self, event):
+        if self.drag_origin is None or event.x is None:
+            return
+        pixel, left, right, width = self.drag_origin
+        if abs(pixel-event.x) < 2 and not self.drag_moved:
+            return
+        self.drag_moved = True
+        shift = (pixel-event.x) / width * (right-left)
+        self.viewport.set_window(left+shift, right+shift, self._timeline_end())
+        if time.monotonic() - self.last_draw >= .05:
+            self._draw()
+
+    def _on_drag_end(self, event):
+        if self.drag_origin is not None:
+            self._on_drag_move(event)
+            self.drag_origin = None
+            self.drag_moved = False
+            self._draw()
+
+    def _on_timeline_scroll(self, action, value, kind=None):
+        end = self._timeline_end()
+        if action == 'moveto':
+            self.viewport.move_to(float(value), end)
+        elif action == 'scroll':
+            left, right = self.viewport.limits(end)
+            self.viewport.pan(int(value) * (right-left) * (.9 if kind == 'pages' else .1), end)
+        self._draw()
+
+    def _on_event_selected(self, _event=None):
+        selected = self.tree.selection()
+        if not selected:
+            return
+        index = int(selected[0].split('-')[1])
+        if index >= len(self.event_records):
+            return
+        event = self.event_records[index]
+        self.viewport.focus_event(event['start'], event['end'], self._timeline_end())
+        self._draw()
+
+    def _on_event_clicked(self, event):
+        # TreeviewSelect does not fire again when clicking an already selected row.
+        if self.tree.identify_row(event.y) in self.tree.selection():
+            self._on_event_selected()
 
     def _draw(self):
         self.last_draw = time.monotonic()
         config = self.config
         warmup = config.warmup if config else 20
         threshold = config.threshold if config else 100
-        draw_throughput(self.ax, self.samples, warmup, threshold, self._selected_time_unit())
+        end = self._timeline_end()
+        limits = self.viewport.limits(end)
+        view = draw_throughput(self.ax, self.samples, warmup, threshold, self._selected_time_unit(), x_limits=limits)
+        self.timeline_scroll.set(*self.viewport.fractions(end))
+        mode = {'all': '全部', 'manual': '歷史', 'follow': '跟隨'}[self.viewport.mode]
+        reduced = ' · 總覽取極值' if view['overview'] else ''
+        self.view_status.set(f'{mode}｜{elapsed_label(limits[0])}–{elapsed_label(limits[1])}{reduced}')
         self.ax.set_title(f"{config.protocol} | {'Download / receiver' if config.reverse else 'Upload / sender'} | {config.server}:{config.port}" if config else 'iperf3 live throughput', loc='left', fontsize=11)
         self.ax.grid(alpha=0.2)
         self.ax.legend(loc='upper right', fontsize=8)

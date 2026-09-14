@@ -62,6 +62,31 @@ class ChartingTests(unittest.TestCase):
         self.chart.draw_throughput(ax, samples, 20, 100, 'auto')
         self.assertLessEqual(len(ax.patches), 1, 'Long runs must not create thousands of span patches')
 
+    def test_zoom_draws_only_nearby_samples_and_keeps_precise_day_ticks(self):
+        from matplotlib.figure import Figure
+        base = 10 * 86400
+        samples = [dict(start=base+i, end=base+i+1, mbps=20 if i == 5000 else 200,
+                        status='LOW' if i == 5000 else 'OK') for i in range(10000)]
+        ax = Figure().subplots()
+        self.chart.draw_throughput(ax, samples, 20, 100, 'days', x_limits=(base+4995, base+5005))
+        curve = next(line for line in ax.lines if line.get_label() == 'Throughput curve')
+        self.assertLess(len(curve.get_xdata()), 200)
+        formatter = ax.xaxis.get_major_formatter()
+        self.assertNotEqual(formatter(base+5000, 0), formatter(base+5001, 0))
+        low = next(c for c in ax.collections if c.get_label() == 'Below threshold')
+        self.assertEqual(list(low.get_offsets()[0]), [base+5000.5, 20])
+
+    def test_overview_reduction_keeps_a_single_sample_failure(self):
+        from matplotlib.figure import Figure
+        samples = [dict(start=i, end=i+1, mbps=1 if i == 12345 else 900,
+                        status='LOW' if i == 12345 else 'OK') for i in range(30000)]
+        ax = Figure().subplots()
+        self.chart.draw_throughput(ax, samples, 20, 100)
+        curve = next(line for line in ax.lines if line.get_label() == 'Throughput curve')
+        self.assertLess(len(curve.get_xdata()), 10000)
+        self.assertEqual(min(curve.get_ydata()), 1)
+        self.assertEqual(len(samples), 30000)
+
 
 if __name__ == '__main__':
     unittest.main()

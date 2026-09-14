@@ -27,9 +27,18 @@ def check_package(report_path: str) -> int:
             raise RuntimeError('Bundled iperf3 was not found')
         result.update(iperf=executable, matplotlib=matplotlib.__version__,
                       matplotlib_path=matplotlib.__file__, app_directory=str(app_directory()))
-        with socket.socket() as probe:
-            probe.bind(('127.0.0.1', 0))
-            port = probe.getsockname()[1]
+        # A TCP-available ephemeral port may be reserved for UDP on Windows.
+        for _ in range(32):
+            with socket.socket() as probe, socket.socket(type=socket.SOCK_DGRAM) as udp_probe:
+                probe.bind(('127.0.0.1', 0))
+                port = probe.getsockname()[1]
+                try:
+                    udp_probe.bind(('127.0.0.1', port))
+                except OSError:
+                    continue
+                break
+        else:
+            raise RuntimeError('No available loopback TCP/UDP port found')
         server = subprocess.Popen([executable, '-s', '-1', '-B', '127.0.0.1', '-p', str(port)],
                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                   creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
@@ -52,6 +61,7 @@ def check_package(report_path: str) -> int:
         if not app.active:
             raise RuntimeError(app.status.get())
         deadline, pumps, stopped, units_changed = time.monotonic() + 25, 0, False, False
+        historical_view = None
         while app.active and time.monotonic() < deadline:
             root.update()
             pumps += 1
@@ -59,7 +69,12 @@ def check_package(report_path: str) -> int:
                 if app.time_unit_combo.instate(['disabled']):
                     raise RuntimeError('Time units cannot be changed during a measurement')
                 app.vars['time_unit'].set('分')
+                app.zoom_view(.5, .5)
+                historical_view = app.viewport.limits(app._timeline_end())
                 units_changed = True
+            if len(app.samples) >= 3 and historical_view is not None:
+                if app.viewport.limits(app._timeline_end()) != historical_view:
+                    raise RuntimeError('Incoming samples reset the historical viewport')
             if len(app.samples) >= 4 and not stopped:
                 app.stop_button.invoke()
                 stopped = True
@@ -78,6 +93,12 @@ def check_package(report_path: str) -> int:
             raise RuntimeError('Desktop raw throughput output is not in Mbits/sec')
         if not outcome.summary['low_samples']:
             raise RuntimeError('UDP throughput was not classified below the test threshold')
+        app.tree.selection_set('event-0')
+        root.update()
+        event = app.event_records[0]
+        left, right = app.viewport.limits(app._timeline_end())
+        if not (left <= event['start'] <= event['end'] <= right):
+            raise RuntimeError('Low-event selection did not focus its interval')
         if 'minutes' not in app.ax.get_xlabel() or app.ax.get_ylabel() != 'Throughput (Mbps)':
             raise RuntimeError('Time-axis conversion changed the wrong axis')
         curve = next(line for line in app.ax.lines if line.get_label() == 'Throughput curve')
@@ -90,7 +111,8 @@ def check_package(report_path: str) -> int:
             raise RuntimeError('Saved settings did not round-trip correctly')
         result.update(passed=True, samples=len(outcome.samples), ui_event_pumps=pumps,
                       output=str(outcome.output), summary=outcome.summary, config_roundtrip=True,
-                      chart_time_unit=restored.time_unit, curve_points=len(curve.get_xdata()))
+                      chart_time_unit=restored.time_unit, curve_points=len(curve.get_xdata()),
+                      navigation_verified=True)
         return_code = 0
     except Exception:
         result['error'] = traceback.format_exc()
