@@ -19,7 +19,7 @@ def main():
         assert app.udp_entry.instate(['disabled'])
         for key, value in {'server': '10.0.0.2', 'port': 5201, 'duration': 0, 'parallel': 2,
                            'protocol': 'UDP', 'udp_mbps': 25, 'direction': '下載：server → 本機',
-                           'output': Path(folder) / 'results'}.items():
+                           'output': Path(folder) / 'results', 'time_unit': '天'}.items():
             app.vars[key].set(str(value))
         assert not app.udp_entry.instate(['disabled'])
         app.save_button.invoke()
@@ -33,6 +33,7 @@ def main():
         assert loaded.server == '10.0.0.2' and loaded.port == 5201
         assert loaded.protocol == 'UDP' and loaded.udp_mbps == 25 and loaded.parallel == 2
         assert loaded.duration == 0 and loaded.reverse
+        assert loaded.time_unit == 'days'
         assert not app.udp_entry.instate(['disabled'])
         app.vars['protocol'].set('TCP')
         assert app.udp_entry.instate(['disabled'])

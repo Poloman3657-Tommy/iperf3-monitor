@@ -36,7 +36,7 @@ class ConfigStoreTests(unittest.TestCase):
             one, two = base / 'first', base / 'relocated'
             one.mkdir(); two.mkdir()
             cfg = RunConfig(iperf=str(one / 'iperf3' / 'iperf3.exe'), output=one / 'gui-results',
-                            protocol='UDP', udp_mbps=25, reverse=True, parallel=2, duration=0)
+                            protocol='UDP', udp_mbps=25, reverse=True, parallel=2, duration=0, time_unit='hours')
             self.store.save_config(cfg, one / 'config.json')
             raw = (one / 'config.json').read_text(encoding='utf-8')
             data = json.loads(raw)
@@ -47,12 +47,13 @@ class ConfigStoreTests(unittest.TestCase):
             self.assertEqual(Path(loaded.iperf), two / 'iperf3' / 'iperf3.exe')
             self.assertEqual(loaded.output, two / 'gui-results')
             self.assertEqual(loaded.udp_mbps, 25)
+            self.assertEqual(loaded.time_unit, 'hours')
             self.assertTrue(loaded.reverse)
 
     def test_bad_settings_are_rejected_without_overwriting_them(self):
         examples = ['{', '[]', '{"reverse":"false"}', '{"port":true}',
                     '{"protocol":"SCTP"}', '{"udp_mbps":0}', '{"udp_mbps":NaN}',
-                    '{"version":2}', '{"typo":1}', '{"port":4477,"port":5201}']
+                    '{"version":2}', '{"typo":1}', '{"port":4477,"port":5201}', '{"time_unit":"weeks"}']
         examples.extend(json.dumps({key: 10 ** 400}) for key in ('threshold', 'warmup', 'udp_mbps'))
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'config.json'

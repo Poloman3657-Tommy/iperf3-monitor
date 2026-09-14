@@ -14,6 +14,7 @@ import sys
 import threading
 
 import monitor
+from charting import TIME_UNITS
 
 
 def app_directory() -> Path:
@@ -41,9 +42,12 @@ class RunConfig:
     reverse: bool = False
     protocol: str = 'TCP'
     udp_mbps: float = 1000
+    time_unit: str = 'auto'
     output: Path = field(default_factory=lambda: app_directory() / 'gui-results')
 
     def validated(self, *, check_executable: bool = True) -> RunConfig:
+        if self.time_unit not in TIME_UNITS:
+            raise ValueError('時間單位必須是 auto、seconds、minutes、hours 或 days。')
         if not all(isinstance(value, str) for value in (self.server, self.iperf, self.protocol)):
             raise ValueError('IP、執行檔與協定必須是文字。')
         if type(self.reverse) is not bool:

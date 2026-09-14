@@ -106,12 +106,13 @@ macOS 請使用含可用 Tkinter 的 Python；可先用 `python3 -m tkinter` 檢
 - `gui.py`：Tk 表單、即時曲線、事件佇列及主視窗生命週期。
 - `gui_runner.py`：不可變設定、路徑驗證、背景測速；不呼叫 Tk。
 - `config_store.py`：設定檔驗證、相對路徑與原子儲存。
+- `charting.py`：即時圖／PNG 共用的時間刻度、原始取樣標記與不超調的平滑連線。
 - `monitor.py`：與既有 CLI 共用解析、門檻判定、低速事件及檔案輸出；靜態圖使用獨立 Agg Figure，不切換 Tk 的 backend。
 
 工作區測試命令：
 
 ```bat
-..\.venv\Scripts\python.exe -m unittest -v test_config_store test_gui_runner test_monitor
+..\.venv\Scripts\python.exe -m unittest -v test_charting test_config_store test_gui_runner test_monitor
 ..\.venv\Scripts\python.exe validate_settings_gui.py --iperf D:\iperf3.16_64\iperf3.exe
 ..\.venv\Scripts\python.exe validate_gui.py --iperf D:\iperf3.16_64\iperf3.exe
 ..\.venv\Scripts\python.exe validate_gui.py --iperf D:\iperf3.16_64\iperf3.exe --close-only

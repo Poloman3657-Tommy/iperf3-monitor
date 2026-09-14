@@ -82,7 +82,7 @@ def summarize(samples: list[dict], state: str, error: str | None) -> dict:
             'events': events}
 
 
-def draw_plot(samples: list[dict], summary: dict, args: argparse.Namespace, output: Path) -> None:
+def draw_plot(samples: list[dict], summary: dict, args: argparse.Namespace, output: Path, *, time_unit=None) -> None:
     from matplotlib.figure import Figure
     from matplotlib.backends.backend_agg import FigureCanvasAgg
 
@@ -90,29 +90,9 @@ def draw_plot(samples: list[dict], summary: dict, args: argparse.Namespace, outp
     fig = Figure(figsize=(12, 5.5), layout='constrained')
     FigureCanvasAgg(fig)
     ax = fig.subplots()
-    if samples:
-        # Each horizontal segment is an interval mean, not an instantaneous reading.
-        x, y = [], []
-        for s in samples:
-            x.extend([s['start'], s['end'], float('nan')])
-            y.extend([s['mbps'], s['mbps'], float('nan')])
-        ax.plot(x, y, color='#2563eb', linewidth=1.5, label='Interval throughput')
-        lows = [s for s in samples if s['status'] == 'LOW']
-        ax.scatter([(s['start'] + s['end']) / 2 for s in lows], [s['mbps'] for s in lows],
-                   color='#dc2626', s=22, zorder=4, label='Below threshold')
-        for event in summary['events']:
-            ax.axvspan(event['start'], event['end'], color='#ef4444', alpha=0.12)
-    else:
-        ax.text(0.5, 0.5, 'No throughput samples collected', transform=ax.transAxes, ha='center')
-    ax.axvspan(0, args.warmup, color='#94a3b8', alpha=0.25, label=f'Warm-up: {args.warmup:g}s (ignored)')
-    ax.axhline(args.threshold, color='#dc2626', linestyle='--', linewidth=1,
-               label=f'Threshold: {args.threshold:g} Mbps')
-    ax.axvline(args.warmup, color='#64748b', linestyle=':', linewidth=1)
-    max_time = max([args.warmup + 1] + [s['end'] for s in samples])
-    ax.set_xlim(0, max_time)
-    ax.set_ylim(bottom=0)
-    ax.set_xlabel('Seconds since traffic started')
-    ax.set_ylabel('Throughput (Mbps)')
+    from charting import draw_throughput
+    draw_throughput(ax, samples, args.warmup, args.threshold,
+                    time_unit if time_unit is not None else getattr(args, 'time_unit', 'auto'))
     direction = 'Download / local receiver' if args.reverse else 'Upload / local sender'
     minimum = f"{summary['min_mbps']:.3f}" if summary['min_mbps'] is not None else 'N/A'
     average = f"{summary['average_mbps']:.3f}" if summary['average_mbps'] is not None else 'N/A'

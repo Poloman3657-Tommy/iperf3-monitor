@@ -51,10 +51,15 @@ def check_package(report_path: str) -> int:
         app.start_button.invoke()
         if not app.active:
             raise RuntimeError(app.status.get())
-        deadline, pumps, stopped = time.monotonic() + 25, 0, False
+        deadline, pumps, stopped, units_changed = time.monotonic() + 25, 0, False, False
         while app.active and time.monotonic() < deadline:
             root.update()
             pumps += 1
+            if len(app.samples) >= 2 and not units_changed:
+                if app.time_unit_combo.instate(['disabled']):
+                    raise RuntimeError('Time units cannot be changed during a measurement')
+                app.vars['time_unit'].set('分')
+                units_changed = True
             if len(app.samples) >= 4 and not stopped:
                 app.stop_button.invoke()
                 stopped = True
@@ -73,12 +78,19 @@ def check_package(report_path: str) -> int:
             raise RuntimeError('Desktop raw throughput output is not in Mbits/sec')
         if not outcome.summary['low_samples']:
             raise RuntimeError('UDP throughput was not classified below the test threshold')
+        if 'minutes' not in app.ax.get_xlabel() or app.ax.get_ylabel() != 'Throughput (Mbps)':
+            raise RuntimeError('Time-axis conversion changed the wrong axis')
+        curve = next(line for line in app.ax.lines if line.get_label() == 'Throughput curve')
+        if len(curve.get_xdata()) <= len(outcome.samples) * 2:
+            raise RuntimeError('Smooth throughput curve was not rendered')
         app.save_button.invoke()
         restored = load_config(preferences)
-        if restored.protocol != 'UDP' or restored.udp_mbps != 25 or restored.parallel != 1 or not restored.reverse:
+        if (restored.protocol != 'UDP' or restored.udp_mbps != 25 or restored.parallel != 1 or
+                not restored.reverse or restored.time_unit != 'minutes'):
             raise RuntimeError('Saved settings did not round-trip correctly')
         result.update(passed=True, samples=len(outcome.samples), ui_event_pumps=pumps,
-                      output=str(outcome.output), summary=outcome.summary, config_roundtrip=True)
+                      output=str(outcome.output), summary=outcome.summary, config_roundtrip=True,
+                      chart_time_unit=restored.time_unit, curve_points=len(curve.get_xdata()))
         return_code = 0
     except Exception:
         result['error'] = traceback.format_exc()

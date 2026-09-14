@@ -3,7 +3,7 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
 root = Path(__file__).resolve().parent
-files = ['gui.py', 'gui_runner.py', 'config_store.py', 'config.example.json', 'monitor.py', 'requirements.txt',
+files = ['gui.py', 'gui_runner.py', 'charting.py', 'config_store.py', 'config.example.json', 'monitor.py', 'requirements.txt',
          'run-gui.cmd', 'run-gui.sh', 'GUI-README.md', 'Windows-README.md']
 output = root / 'portable' / 'iperf-monitor-python-gui.zip'
 output.parent.mkdir(exist_ok=True)

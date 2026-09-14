@@ -9,6 +9,7 @@
   "reverse": false,
   "protocol": "TCP",
   "udp_mbps": 1000,
+  "time_unit": "auto",
   "iperf": "",
   "output": "gui-results"
 }

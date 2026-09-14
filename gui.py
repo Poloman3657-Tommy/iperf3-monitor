@@ -32,8 +32,10 @@ except ModuleNotFoundError as exc:
 
 from gui_runner import RunConfig, RunOutcome, app_directory, find_iperf, run_test
 from config_store import load_config, save_config
+from charting import draw_throughput
 import monitor
 
+TIME_LABELS = {'自動': 'auto', '秒': 'seconds', '分': 'minutes', '時': 'hours', '天': 'days'}
 
 class MonitorApp:
     """Own every Tk/Matplotlib operation on the main thread; workers only enqueue data."""
@@ -62,6 +64,7 @@ class MonitorApp:
             'duration': defaults.duration, 'warmup': defaults.warmup, 'threshold': defaults.threshold,
             'parallel': defaults.parallel, 'protocol': defaults.protocol, 'udp_mbps': defaults.udp_mbps,
             'output': defaults.output,
+            'time_unit': next(label for label, value in TIME_LABELS.items() if value == defaults.time_unit),
             'direction': '下載：server → 本機' if defaults.reverse else '上傳：本機 → server',
         }.items()}
         self.status = tk.StringVar(value='就緒：確認設定後按「開始測速」。')
@@ -69,6 +72,7 @@ class MonitorApp:
         self.metrics = {key: tk.StringVar(value='—') for key in ('current', 'minimum', 'average', 'low')}
         self._build()
         self.vars['protocol'].trace_add('write', lambda *_: self._update_protocol_state())
+        self.vars['time_unit'].trace_add('write', lambda *_: self._draw())
         self._update_protocol_state()
         if load_error:
             self.status.set(load_error)
@@ -163,6 +167,14 @@ class MonitorApp:
         chart_tab, log_tab = ttk.Frame(tabs), ttk.Frame(tabs)
         tabs.add(chart_tab, text='即時曲線與低速事件')
         tabs.add(log_tab, text='iperf3 原始輸出')
+        chart_options = ttk.Frame(chart_tab, padding=(6, 5))
+        chart_options.pack(fill='x')
+        ttk.Label(chart_options, text='時間單位').pack(side='left')
+        # Display-only control remains available during a measurement.
+        self.time_unit_combo = ttk.Combobox(chart_options, textvariable=self.vars['time_unit'],
+                                           values=list(TIME_LABELS), width=7, state='readonly')
+        self.time_unit_combo.pack(side='left', padx=(8, 12))
+        ttk.Label(chart_options, text='曲線連接取樣點；警示仍依原始取樣判定。').pack(side='left')
         self.figure = Figure(figsize=(8, 4.4), dpi=100, layout='constrained')
         self.ax = self.figure.subplots()
         self.canvas = FigureCanvasTkAgg(self.figure, master=chart_tab)
@@ -205,6 +217,7 @@ class MonitorApp:
                 warmup=float(self.vars['warmup'].get()), threshold=float(self.vars['threshold'].get()),
                 parallel=int(self.vars['parallel'].get()), reverse=self.vars['direction'].get().startswith('下載'),
                 protocol=self.vars['protocol'].get(), udp_mbps=float(self.vars['udp_mbps'].get()),
+                time_unit=self._selected_time_unit(),
                 output=Path(self.vars['output'].get()),
             ).validated(check_executable=check_executable)
         except ValueError as exc:
@@ -223,6 +236,10 @@ class MonitorApp:
 
     def _update_protocol_state(self):
         self.udp_entry.configure(state='normal' if not self.active and self.vars['protocol'].get() == 'UDP' else 'disabled')
+
+    def _selected_time_unit(self):
+        value = self.vars['time_unit'].get()
+        return TIME_LABELS.get(value, value)
 
     def _set_running(self, running):
         for widget, original in self.controls:
@@ -334,24 +351,7 @@ class MonitorApp:
         config = self.config
         warmup = config.warmup if config else 20
         threshold = config.threshold if config else 100
-        self.ax.clear()
-        self.ax.axvspan(0, warmup, color='#94a3b8', alpha=0.22, label='Warm-up (ignored)')
-        self.ax.axhline(threshold, color='#c6373e', linestyle='--', linewidth=1, label=f'{threshold:g} Mbps threshold')
-        if self.samples:
-            xs, ys = [], []
-            for sample in self.samples:
-                xs.extend([sample['start'], sample['end']])
-                ys.extend([sample['mbps']] * 2)
-            self.ax.plot(xs, ys, color='#2466d6', linewidth=1.4, label='Interval throughput')
-            lows = [s for s in self.samples if s['status'] == 'LOW']
-            if lows:
-                self.ax.scatter([(s['start'] + s['end']) / 2 for s in lows], [s['mbps'] for s in lows], color='#c6373e', s=16, zorder=4, label='Below threshold')
-        else:
-            self.ax.text(0.5, 0.5, 'Waiting for throughput samples', transform=self.ax.transAxes, ha='center', color='#607487')
-        self.ax.set_xlim(0, max(warmup + 1, self.samples[-1]['end'] if self.samples else 60))
-        self.ax.set_ylim(0, max(threshold, max((s['mbps'] for s in self.samples), default=100)) * 1.18)
-        self.ax.set_xlabel('Time since traffic started (seconds)')
-        self.ax.set_ylabel('Throughput (Mbps)')
+        draw_throughput(self.ax, self.samples, warmup, threshold, self._selected_time_unit())
         self.ax.set_title(f"{config.protocol} | {'Download / receiver' if config.reverse else 'Upload / sender'} | {config.server}:{config.port}" if config else 'iperf3 live throughput', loc='left', fontsize=11)
         self.ax.grid(alpha=0.2)
         self.ax.legend(loc='upper right', fontsize=8)
@@ -366,7 +366,8 @@ class MonitorApp:
         # The saved static renderer runs on the same thread as the live Matplotlib canvas.
         if self.output is not None and self.output.is_dir():
             try:
-                monitor.draw_plot(self.samples, outcome.summary, outcome.config, self.output)
+                monitor.draw_plot(self.samples, outcome.summary, outcome.config, self.output,
+                                  time_unit=self._selected_time_unit())
             except Exception as exc:
                 outcome.summary = monitor.summarize(self.samples, 'ERROR', f'PNG 儲存失敗：{exc}')
                 try:
