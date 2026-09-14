@@ -85,7 +85,7 @@ class RunConfig:
 
     def command(self) -> list[str]:
         args = [self.iperf, '-c', self.server, '-p', str(self.port), '-t', str(self.duration),
-                '-i', '1', '-f', 'k', '-P', str(self.parallel), '--forceflush', '--connect-timeout', '5000']
+                '-i', '1', '-f', 'm', '-P', str(self.parallel), '--forceflush', '--connect-timeout', '5000']
         if self.protocol == 'UDP':
             # iperf3 applies -b independently to each stream, not to the SUM rate.
             args.extend(['-u', '-b', str(round(self.udp_mbps * 1_000_000))])

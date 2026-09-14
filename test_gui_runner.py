@@ -106,6 +106,7 @@ class DesktopConfigTests(unittest.TestCase):
         self.assertNotIn('-R', normal)
         self.assertIn('-R', self.config(reverse=True).command())
         self.assertEqual(normal[normal.index('-p') + 1], '4477')
+        self.assertEqual(normal[normal.index('-f') + 1], 'm')
 
     def test_zero_duration_preserves_warmup_and_requests_native_continuous_test(self):
         config = self.config(duration=0)

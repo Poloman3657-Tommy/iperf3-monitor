@@ -68,6 +68,9 @@ def check_package(report_path: str) -> int:
             raise RuntimeError(f'Unexpected measurement result: {outcome}')
         if (outcome.output / 'throughput.png').stat().st_size < 10000:
             raise RuntimeError('PNG report was not generated correctly')
+        raw_log = (outcome.output / 'iperf.log').read_text(encoding='utf-8')
+        if 'Mbits/sec' not in raw_log or 'Kbits/sec' in raw_log:
+            raise RuntimeError('Desktop raw throughput output is not in Mbits/sec')
         if not outcome.summary['low_samples']:
             raise RuntimeError('UDP throughput was not classified below the test threshold')
         app.save_button.invoke()

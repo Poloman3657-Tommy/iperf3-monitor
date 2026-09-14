@@ -91,6 +91,7 @@ macOS 請使用含可用 Tkinter 的 Python；可先用 `python3 -m tkinter` 檢
 ## 量測規則與產物
 
 - 速率為十進位 Mbps，依 iperf3 每秒文字報告判定，受其顯示精度限制。
+- 桌面版使用 `-f m`，所以「iperf3 原始輸出」與 `iperf.log` 的 bitrate 顯示 `Mbits/sec`。圖表仍使用等義的 Mbps；判定精度依 iperf3 顯示的數值。
 - 完全位於暖機之後的區間才判定：`start >= warmup`。跨界整段忽略，等於門檻不算低速。
 - 暖機後 0 Mbps 算低速；沒有收到報告不當作 0 Mbps。
 - 上傳是本機 sender 的發送速率；下載是本機 receiver 的接收速率。多流只判斷 SUM 合計。
