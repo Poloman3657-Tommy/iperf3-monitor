@@ -36,6 +36,7 @@ from charting import draw_throughput
 from viewport import TimeViewport, elapsed_label
 from mcs import LowEventGate, McsDispatcher, result_label, format_capture
 from mcs_dialog import SshDialog
+from html_report import save_report
 import monitor
 
 TIME_LABELS = {'自動': 'auto', '秒': 'seconds', '分': 'minutes', '時': 'hours', '天': 'days'}
@@ -59,6 +60,10 @@ class MonitorApp:
         self.samples = []
         self.output = None
         self.last_outcome = None
+        self.report_worker = self.report_file = None
+        self.report_pending = False
+        self.report_time_unit = 'auto'
+        self.report_status = tk.StringVar(value='測試結束後自動保存互動 HTML 報告。')
         self.config = None
         self.ssh_settings, self.ssh_password = defaults.ssh, ''
         self.ssh_dialog = self.dispatcher = None
@@ -169,6 +174,8 @@ class MonitorApp:
                   wraplength=300).grid(row=15, column=0, sticky='w', pady=(18, 0))
         self.folder_button = ttk.Button(form, text='開啟本次結果資料夾', command=self.open_output, state='disabled')
         self.folder_button.grid(row=16, column=0, sticky='ew', pady=(16, 0))
+        self.report_button = ttk.Button(form, text='開啟 HTML 報告', command=self.open_report, state='disabled')
+        self.report_button.grid(row=17, column=0, sticky='ew', pady=(6, 0))
 
         right = ttk.Frame(body)
         right.grid(row=0, column=1, sticky='nsew')
@@ -250,6 +257,7 @@ class MonitorApp:
         self.status_label = ttk.Label(outer, textvariable=self.status, wraplength=1050)
         self.status_label.pack(fill='x')
         ttk.Label(outer, textvariable=self.path_status, wraplength=1050).pack(fill='x', pady=(3, 0))
+        ttk.Label(outer, textvariable=self.report_status, wraplength=1050).pack(fill='x', pady=(3, 0))
         self._draw()
 
     def _pick_iperf(self):
@@ -335,7 +343,7 @@ class MonitorApp:
             self._show_mcs(result)
 
     def start(self):
-        if self.active or (self.dispatcher and self.dispatcher.busy):
+        if self.active or self.closing or self.report_pending or self.report_worker is not None or (self.dispatcher and self.dispatcher.busy):
             return
         try:
             config = self.read_config()
@@ -346,6 +354,9 @@ class MonitorApp:
             self.status_label.configure(foreground='#c6373e')
             return
         self.config, self.samples, self.output, self.last_outcome = config, [], None, None
+        self.report_file = None
+        self.report_button.configure(state='disabled')
+        self.report_status.set('測試結束後自動保存互動 HTML 報告。')
         self.dispatcher = None
         self.low_gate, self.mcs_results = LowEventGate(), {}
         self._show_mcs(None)
@@ -422,6 +433,11 @@ class MonitorApp:
                 changed = True
             elif kind == 'mcs':
                 self._receive_mcs(value)
+            elif kind == 'report':
+                self.report_worker = None
+                self.report_file, error = value
+                self.report_status.set(f'HTML 儲存失敗：{error}' if error else f'HTML 已保存：{self.report_file}')
+                self.report_button.configure(state='normal' if self.report_file else 'disabled')
             elif kind == 'finished':
                 self._finish(value)
                 changed = False
@@ -437,7 +453,8 @@ class MonitorApp:
             if not self.samples and not self.stop_event.is_set():
                 self.status.set(f'等待 iperf3 輸出… {time.monotonic() - self.started_at:.0f} 秒')
         if not self.active:
-            pending = self.dispatcher is not None and self.dispatcher.busy
+            self._start_report()
+            pending = (self.dispatcher is not None and self.dispatcher.busy) or self.report_pending or self.report_worker is not None
             self.start_button.configure(state='disabled' if pending else 'normal')
             self.ssh_button.configure(state='disabled' if pending else 'normal')
             if self.closing and not pending:
@@ -582,6 +599,10 @@ class MonitorApp:
                     outcome.summary['error'] += f'；摘要儲存失敗：{save_error}'
             self.folder_button.configure(state='normal')
         self.last_outcome = outcome
+        self.report_pending = self.output is not None and self.output.is_dir()
+        self.report_time_unit = self._selected_time_unit()
+        if self.report_pending:
+            self.report_status.set('等待 Station 查詢完成並保存 HTML 報告…')
         self._set_running(False)
         self._update_metrics()
         self._draw()
@@ -596,6 +617,37 @@ class MonitorApp:
             self.path_status.set(f'保存位置：{self.output}')
         if self.closing:
             self._destroy()
+
+    def _start_report(self):
+        if not self.report_pending or self.report_worker is not None or (self.dispatcher and self.dispatcher.busy):
+            return
+        self.report_pending = False
+        outcome, unit, events = self.last_outcome, self.report_time_unit, self.events
+        self.report_status.set('正在保存互動 HTML 報告…')
+        def work():
+            try:
+                path = save_report(outcome.samples, outcome.summary, outcome.config, outcome.output, unit)
+                events.put(('report', (path, None)))
+            except Exception as exc:
+                error = str(exc)
+                try:
+                    (outcome.output / 'html-report-error.txt').write_text(error, encoding='utf-8')
+                except OSError as save_error:
+                    error += f'；錯誤紀錄也無法寫入：{save_error}'
+                events.put(('report', (None, error)))
+        self.report_worker = threading.Thread(target=work, daemon=False)
+        self.report_worker.start()
+
+    def open_report(self):
+        if not self.report_file:
+            return
+        try:
+            if os.name == 'nt':
+                os.startfile(self.report_file)
+            else:
+                subprocess.Popen(['open' if sys.platform == 'darwin' else 'xdg-open', str(self.report_file)])
+        except OSError as exc:
+            self.report_status.set(f'無法開啟 HTML：{exc}；可手動開啟 {self.report_file}')
 
     def open_output(self):
         if self.output is None or not self.output.is_dir():
@@ -627,6 +679,13 @@ class MonitorApp:
                 self._set_running(True)
                 self.stop_button.configure(state='disabled')
                 return
+        if self.report_pending or self.report_worker is not None:
+            self.closing = True
+            self._start_report()
+            self.status.set('關閉中，等待 HTML 報告儲存…')
+            self._set_running(True)
+            self.stop_button.configure(state='disabled')
+            return
         if self.ssh_dialog and not self.ssh_dialog.closed:
             self.ssh_dialog.close()
         self.closed = True

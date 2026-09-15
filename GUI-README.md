@@ -2,7 +2,7 @@
 
 **Windows 不想安裝相依套件：** 到 [最新 Release](https://github.com/Poloman3657-Tommy/iperf3-monitor/releases/latest) 下載帶版本號的 Windows x64 免安裝 ZIP，完整解壓縮後進入對應版本資料夾，開啟 `IperfMonitor.exe`。包內已含 Python、Tk、Matplotlib 與 iperf3；不需 pip。詳細步驟見 [Windows 說明](Windows-README.md)。以下是 Python 原始碼版的使用與開發方式。
 
-Windows 打包時必須指定版本，例如 `python zip_windows_bundle.py --version v1.5.0`。輸出 ZIP、SHA-256 和外層資料夾會使用相同版本號；若同版本檔案已存在，工具會拒絕覆寫。
+Windows 打包時必須指定版本，例如 `python zip_windows_bundle.py --version v1.6.0`。輸出 ZIP、SHA-256 和外層資料夾會使用相同版本號；若同版本檔案已存在，工具會拒絕覆寫。
 
 按「開始測速」會**直接啟動本機 iperf3**，每秒更新速率曲線及低速事件；不需要 HTML、下載測試腳本或手動匯入 log。
 
@@ -107,6 +107,8 @@ macOS 請使用含可用 Tkinter 的 Python；可先用 `python3 -m tkinter` 檢
 
 - `gui.py`：Tk 表單、即時曲線、事件佇列及主視窗生命週期。
 - `gui_runner.py`：不可變設定、路徑驗證、背景測速；不呼叫 Tk。
+- `html_report.py`：以明確參數欄位及完整取樣建立單一 HTML，嵌入前跳脫遠端文字，採原子替換保存。讀取 Station JSONL 的最後一筆狀態，損毀內容不默默忽略。
+- `report_assets/`：離線 HTML／CSS／Canvas，純 JavaScript 時間單位、縮放、平移、捲軸、事件定位。無第三方或 CDN 相依；Windows 打包時需一併帶入三個執行資源。
 - `mcs.py`：SSH 設定與命令白名單、主機金鑰驗證、可取消的 iw Station 擷取與欄位顯示、每事件觸發與 JSONL。只有有效 IP 且啟用才建立連線；密碼不屬於 `RunConfig`，不會進入 `asdict`／設定或 `run.json`。
 - `mcs_dialog.py`：SSH 設定與手動測試視窗；worker 透過佇列請主執行緒確認首次主機指紋，不直接存取 Tk。使用方式見 [SSH / Station 設定](Windows-README.md#ssh--station-設定)。
 - `config_store.py`：設定檔驗證、相對路徑與原子儲存。
@@ -119,6 +121,8 @@ macOS 請使用含可用 Tkinter 的 Python；可先用 `python3 -m tkinter` 檢
 ```bat
 ..\.venv\Scripts\python.exe -m unittest -v test_viewport test_charting test_config_store test_gui_runner test_monitor
 ..\.venv\Scripts\python.exe -m unittest -v test_mcs test_mcs_transport test_station test_fail_dates test_zip_bundle
+..\.venv\Scripts\python.exe -m unittest -v test_html_report
+node report_assets/test_report.cjs
 ..\.venv\Scripts\python.exe -m unittest -v test_gui_mcs
 ..\.venv\Scripts\python.exe validate_navigation.py
 ..\.venv\Scripts\python.exe validate_settings_gui.py --iperf D:\iperf3.16_64\iperf3.exe
@@ -135,3 +139,7 @@ macOS 請使用含可用 Tkinter 的 Python；可先用 `python3 -m tkinter` 檢
 2026-09-11 以 GUI 流程實測 NUC `192.168.137.57:4477`，下載 60 秒，前 20 秒忽略：最低 **496.441 Mbps**，加權平均 **850.017 Mbps**，低速 **0 次**，結果 PASS。這只代表該次觀察，長期監測可增加秒數。
 
 Fail 日期由 `monitor.collect` 的 stdout 讀取執行緒在收到每行時建立 `observed_at`，避免 GUI／SSH 的排隊時間污染日期。`summarize` 合併 LOW 時保留首筆 `detected_at`，空白 SSH IP 不影響此流程。對應測試涵蓋固定時鐘、跨午夜合併、CSV 匯出與真正 Tk 顯示。
+
+HTML 匯出在 GUI 收到 finished 之後，等 Station worker 結束才啟動背景存檔。下一輪與關閉視窗皆等待 report 事件；Tk 測試涵蓋晚到 SSH 結果、失敗提示及關閉等待。`test_html_report` 驗證完整資料、注入文字跳脫與原子寫入失敗，Node 測試驗證四天選點極值及導航邊界。
+
+瀏覽器驗證可執行 `python report_assets/create_fixture.py` 建立人工資料，再以 `python -m http.server 8767 --bind 127.0.0.1 --directory validation/html-report` 提供測試頁。使用 Playwright CLI 開啟 `http://127.0.0.1:8767/report.html` 並取得 snapshot，接著 `run-code --filename report_assets/test_browser.js`；此檢查會將瀏覽器切為離線，測試時間單位、鍵盤焦點、滾輪、拖移、水平捲軸、173 次事件分頁定位與資料完整性。完成後關閉專用瀏覽器工作階段與本機測試伺服器。

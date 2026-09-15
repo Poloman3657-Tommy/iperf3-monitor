@@ -5,7 +5,8 @@ root = Path(SPECPATH)
 a = Analysis(
     [str(root / 'desktop_entry.py')],
     pathex=[str(root)],
-    binaries=[], datas=[], hiddenimports=[], hookspath=[],
+    binaries=[], datas=[(str(root / 'report_assets' / name), 'report_assets')
+                        for name in ('report.html', 'report.css', 'report.js')], hiddenimports=[], hookspath=[],
     hooksconfig={'matplotlib': {'backends': ['TkAgg', 'Agg']}},
     runtime_hooks=[], excludes=[], noarchive=False,
 )

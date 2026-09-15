@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'">
+<link rel="icon" href="data:,">
+<title>iperf3 測試報告</title><style>/* REPORT_CSS */</style>
+</head>
+<body>
+<main>
+<header><div><p class="eyebrow">IPERF3 MONITOR · OFFLINE REPORT</p><h1>測試結果</h1><p id="subtitle"></p></div><strong id="verdict" class="badge"></strong></header>
+<div id="error" role="alert" hidden></div>
+<section class="metrics" aria-label="測試摘要"><div><span>最低 Mbps</span><strong id="minimum"></strong></div><div><span>平均 Mbps</span><strong id="average"></strong></div><div><span>低速累計秒數</span><strong id="low-seconds"></strong></div><div><span>Fail 事件</span><strong id="event-count"></strong></div></section>
+<section class="card" aria-label="互動速率圖表">
+<div class="toolbar"><label>時間單位 <select id="unit"><option value="auto">自動</option><option value="seconds">秒</option><option value="minutes">分</option><option value="hours">時</option><option value="days">天</option></select></label><button id="zoom-in" aria-label="放大時間軸">＋</button><button id="zoom-out" aria-label="縮小時間軸">－</button><button id="all">顯示全部</button><button id="latest">查看最後一段</button><span id="range"></span></div>
+<p class="hint">滾輪縮放 · 按住左鍵左右拖移 · 下方捲軸移動時間範圍 · 點選 Fail 事件定位</p>
+<div class="plot"><canvas id="chart" aria-label="吞吐量曲線，縱軸 Mbps，橫軸為選定時間單位"></canvas><output id="tooltip" hidden></output></div>
+<div id="timeline" tabindex="0" role="region" aria-label="橫軸水平捲軸"><div id="track"></div></div>
+<div class="legend"><span class="blue">● 速率曲線／原始取樣</span><span class="red">● 低於門檻</span><span>▧ 暖機忽略</span><span id="sampling"></span></div>
+</section>
+<section class="card"><div class="section-title"><h2>Fail 事件</h2><div><button id="previous">上一頁</button><span id="page"></span><button id="next">下一頁</button></div></div><div class="events"><table><thead><tr><th>事件</th><th>偵測日期時間（本機）</th><th>開始秒</th><th>結束秒</th><th>持續秒</th><th>最低 Mbps</th><th>Station</th></tr></thead><tbody id="events"></tbody></table></div><p id="empty-events" class="hint" hidden>沒有低速事件。</p></section>
+<section class="card"><h2 id="detail-title">Station 與事件資料</h2><pre id="detail">點選 Fail 事件可查看偵測時間及 Station 詳細資料。</pre><details><summary>Station 原始紀錄</summary><pre id="raw">尚未選取事件</pre></details></section>
+<footer id="footer"></footer>
+</main>
+<noscript>請啟用 JavaScript 才能查看互動報告；本檔案不會連線到網路。</noscript>
+<script id="report-data" type="application/json">/* REPORT_DATA */</script>
+<script>/* REPORT_JS */</script>
+</body></html>

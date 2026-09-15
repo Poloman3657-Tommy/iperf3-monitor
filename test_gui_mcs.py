@@ -12,9 +12,56 @@ from gui import MonitorApp
 from mcs import SshSettings, parse_station
 from test_station import STATION, MAC, TX, RX
 from mcs import McsDispatcher
+from gui_runner import RunOutcome
+import monitor
 
 
 class GuiMcsTests(unittest.TestCase):
+    def test_html_waits_for_late_station_result(self):
+        self.assertTrue(hasattr(self.app, 'report_pending'), 'HTML lifecycle is missing')
+        entered, release = threading.Event(), threading.Event()
+        def late_station(*args):
+            entered.set()
+            release.wait(3)
+            return dict(status='ERROR', error='late station result', peers=[])
+        with patch('mcs.capture', side_effect=late_station):
+            output = Path(self.folder.name)
+            self.app.config = self.app.read_config(check_executable=False)
+            self.app.dispatcher = McsDispatcher(SshSettings(enabled=True, host='192.0.2.10'), 'dummy', output, self.app.events, output / 'hosts')
+            sample = dict(start=20, end=21, mbps=10, status='LOW')
+            self.app.dispatcher.submit(0, sample)
+            self.assertTrue(entered.wait(2))
+            self.app._finish(RunOutcome(self.app.config, output, [sample], monitor.summarize([sample], 'COMPLETE', None)))
+            self.root.update()
+            self.assertFalse((output / 'report.html').exists())
+            self.assertTrue(self.app.report_pending)
+            release.set()
+            self.pump(lambda: self.app.report_file is not None)
+            self.assertIn('late station result', self.app.report_file.read_text(encoding='utf-8'))
+
+    def test_close_waits_for_report_and_export_errors_are_visible(self):
+        self.assertTrue(hasattr(self.app, 'report_pending'), 'HTML lifecycle is missing')
+        import html_report
+        entered, release = threading.Event(), threading.Event()
+        def delayed_save(*args):
+            entered.set()
+            release.wait(3)
+            return html_report.save_report(*args)
+        self.app.config = self.app.read_config(check_executable=False)
+        outcome = RunOutcome(self.app.config, Path(self.folder.name), [], monitor.summarize([], 'ERROR', 'no samples'))
+        with patch('gui.save_report', side_effect=OSError('test disk full')):
+            self.app._finish(outcome)
+            self.pump(lambda: 'test disk full' in self.app.report_status.get())
+            self.assertIsNone(self.app.report_file)
+        with patch('gui.save_report', side_effect=delayed_save):
+            self.app._finish(outcome)
+            self.pump(entered.is_set)
+            self.app.close()
+            self.assertFalse(self.app.closed)
+            release.set()
+            self.pump(lambda: self.app.closed)
+            self.assertTrue((Path(self.folder.name) / 'report.html').exists())
+
     def setUp(self):
         self.folder = tempfile.TemporaryDirectory()
         self.root = tk.Tk()

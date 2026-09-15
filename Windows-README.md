@@ -111,12 +111,28 @@ Station 結果仍保存到 `mcs-events.jsonl` 以沿用原檔名。每行為一�
 
 狀態包含 `RUNNING`、`OK`、`NO_PEERS`、`ERROR`、`SKIPPED_BUSY`、`CANCELLED`。IP 留白不建立 SSH 紀錄檔，測速 CSV／JSON 的日期仍會保存。SSH 錯誤不改變吞吐量 PASS／LOW；查詢到的 Station 狀態可能晚於 fail。手動測試僅在設定視窗顯示結果。已通過本機模擬 SSH 與真正 Tk 測試，尚未對你的設備實測。
 
+## HTML 結果報告
+
+每次測試完成或按停止後，本次結果資料夾會新增 **`report.html`**。關閉程式時會先停止測速、等 Station 查詢取消／完成，再保存 HTML；報告寫完才能開始下一輪。左側「開啟 HTML 報告」會在存好後啟用，使用系統預設瀏覽器開啟。
+
+將這一個檔案複製到其他電腦即可查看，所有資料與繪圖程式已內嵌，不依賴其他檔案、Python、iperf3 或網路。需要瀏覽器啟用 JavaScript。
+
+- 時間單位：自動／秒／分／時／天，縱軸固定 Mbps。預設沿用測試結束時的單位。
+- 圖表操作：滾輪以游標位置縮放，按住左鍵水平拖移，或用下方水平捲軸。捲軸聚焦後也可按左右方向鍵。
+- Fail 事件：點選一列，放大到事件前後；顯示本機偵測日期、區間、最低速率與 Station 狀態。超過 100 筆時分頁，每頁有捲軸，所有事件都保留。
+- Station 詳情：頁面下方保留 inactive time、signal、signal avg、完整 TX／RX bitrate，以及 SSH 查詢時間、錯誤與原始紀錄。
+- 「顯示全部」回到完整總覽；「查看最後一段」從總覽定位最近 60 秒，其他縮放狀態則保留目前視窗寬度。
+
+完整原始取樣均保存在 HTML 中；多天總覽僅為畫面選取最高／最低及低速代表點，放大恢復逐筆資料。平滑曲線只供顯示，統計和門檻使用原始數據。大報告檔案大小與瀏覽器記憶體用量會隨測試時間增加。HTML 是結果快照，不會繼續測速；重新開啟會回到預設檢視，縮放不會覆寫檔案。
+
+已用 Chrome 與四天人工資料（345,600 筆、173 次 fail）驗證離線切換時間單位、滑鼠縮放拖移、水平捲軸、跨頁事件定位與 Station 顯示。HTML 存檔錯誤會在桌面程式明確顯示，並嘗試寫入 `html-report-error.txt`；原本結果檔案保留。
+
 ## 檔案結構
 
-ZIP 與 SHA-256 檔名都包含版本號，例如 `iperf-monitor-windows-x64-v1.5.0.zip` 和 `iperf-monitor-windows-x64-v1.5.0.zip.sha256`。解壓縮的外層資料夾也會包含版本號，內部 EXE 保持原名。
+ZIP 與 SHA-256 檔名都包含版本號，例如 `iperf-monitor-windows-x64-v1.6.0.zip` 和 `iperf-monitor-windows-x64-v1.6.0.zip.sha256`。解壓縮的外層資料夾也會包含版本號，內部 EXE 保持原名。
 
 ```text
-IperfMonitor-v1.5.0/       以 v1.5.0 為例
+IperfMonitor-v1.6.0/       以 v1.6.0 為例
   IperfMonitor.exe        桌面程式
   config.json             預設／已儲存設定
   _internal/              Python、Tk 與繪圖執行環境

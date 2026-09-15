@@ -89,6 +89,15 @@ def check_package(report_path: str) -> int:
             time.sleep(0.01)
         if app.active:
             raise TimeoutError('Package loopback diagnostic timed out')
+        deadline = time.monotonic() + 15
+        while (app.report_pending or app.report_worker is not None) and time.monotonic() < deadline:
+            root.update()
+            time.sleep(.01)
+        if app.report_file is None or not app.report_file.is_file():
+            raise RuntimeError('HTML report was not saved: ' + app.report_status.get())
+        html = app.report_file.read_text(encoding='utf-8')
+        if 'report-data' not in html or 'HE-MCS' in html or 'package-check-runtime-only' in html:
+            raise RuntimeError('HTML report content or credential isolation is incorrect')
         outcome = app.last_outcome
         if outcome is None or outcome.summary['verdict'] != 'INTERRUPTED' or len(outcome.samples) < 4:
             raise RuntimeError(f'Unexpected measurement result: {outcome}')
@@ -126,7 +135,7 @@ def check_package(report_path: str) -> int:
         result.update(passed=True, samples=len(outcome.samples), ui_event_pumps=pumps,
                       output=str(outcome.output), summary=outcome.summary, config_roundtrip=True,
                       chart_time_unit=restored.time_unit, curve_points=len(curve.get_xdata()),
-                      navigation_verified=True, blank_ssh_verified=True)
+                      navigation_verified=True, blank_ssh_verified=True, html_report_verified=True)
         return_code = 0
     except Exception:
         result['error'] = traceback.format_exc()

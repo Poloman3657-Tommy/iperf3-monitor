@@ -9,7 +9,7 @@
 - `iperf-monitor-windows-x64-v<版本>.zip`：Windows x64 免安裝包。
 - `iperf-monitor-windows-x64-v<版本>.zip.sha256`：對應版本的 SHA-256 校驗碼。
 
-例如 v1.5.0 的檔名是 `iperf-monitor-windows-x64-v1.5.0.zip`，解壓縮後會建立 `IperfMonitor-v1.5.0` 資料夾。請從上方「最新 Release」選擇需要的版本；歷史版本也使用各自的版本號。
+例如 v1.6.0 的檔名是 `iperf-monitor-windows-x64-v1.6.0.zip`，解壓縮後會建立 `IperfMonitor-v1.6.0` 資料夾。請從上方「最新 Release」選擇需要的版本；歷史版本也使用各自的版本號。
 
 1. 將 ZIP **完整解壓縮**到可寫入的資料夾。
 2. 進入 `IperfMonitor-v<版本>` 資料夾，開啟 `IperfMonitor.exe`。
@@ -84,11 +84,22 @@ UDP 丟包和 jitter 留在原始 log，這版 PASS／LOW 只判斷吞吐量。�
 
 ## 結果檔案
 
+### 單一 HTML 互動報告
+
+測試完成、按停止或關閉程式後，會在本次資料夾自動保存 **`report.html`**。程式會先等已啟動的 Station 查詢完成／取消，再寫入報告；存好後可按左側「開啟 HTML 報告」。報告寫入期間會暫時停用開始下一輪測試。
+
+只需複製這一個 HTML 到其他電腦，以瀏覽器開啟即可，**不需要 Python、iperf3 或網路**。支援自動／秒／分／時／天、滾輪縮放、左鍵拖移、下方水平捲軸，以及點選 fail 事件定位。完整保留取樣、統計、fail 日期與 Station 資料；事件超過 100 筆時分頁顯示，每頁可捲動，資料不刪除。
+
+HTML 是已完成測試的報告。「查看最後一段」定位到最後資料，預設最近 60 秒；「顯示全部」回到總覽。開啟時使用測試結束時選定的時間單位，後續切換／縮放不改變原始數據，也不保存瀏覽器檢視狀態。多天資料只在畫面取代表點，放大恢復逐筆顯示；完整資料內嵌，因此檔案大小會隨測試時間增加。
+
+已以 Chrome 驗證四天、345,600 筆取樣及 173 次 fail 的離線互動。若 HTML 寫入失敗，程式顯示錯誤，並盡可能留下 `html-report-error.txt`，原本的 CSV／JSON／PNG 仍保留。
+
 每次測試會建立不同的時間戳資料夾，包含：
 
 | 檔案 | 內容 |
 |---|---|
 | `throughput.png` | 速率曲線、暖機與低速標記 |
+| `report.html` | 單一離線互動報告，包含完整取樣、fail 日期、Station 與圖表縮放／捲動 |
 | `iperf.log` | iperf3 原始輸出及錯誤 |
 | `samples.csv` | 每個取樣的起訖、Mbps、狀態與本機接收日期 `observed_at` |
 | `low_events.csv` | 合併後的低速時段、最低速率與首次偵測日期 `detected_at` |
