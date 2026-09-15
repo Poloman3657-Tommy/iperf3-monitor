@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 from pathlib import Path
 import socket
+import re
 import tempfile
 import threading
 import time
@@ -9,10 +10,10 @@ import unittest
 
 import paramiko
 import mcs
+from test_station import STATION, MAC, TX, RX
 
 PASSWORD = 'test-only&stdin-secret'
 PEERS = '2 peer(s) connected:\nEA:8C:B6:92:F0:B2\nAA:BB:CC:DD:EE:FF\n'
-RATES = '-1 : MCS index\n0 : MCS index\n11 : MCS index\n'
 
 
 class FakeDut(paramiko.ServerInterface):
@@ -51,7 +52,7 @@ class FakeDut(paramiko.ServerInterface):
                     channel.send_stderr(('sudo failed ' + PASSWORD).encode())
                     channel.send_exit_status(1)
                 else:
-                    output = PEERS if 'peerlist' in command else ('bad output ' + PASSWORD if self.malformed and 'EA:8C:' in command else RATES)
+                    output = PEERS if 'peerlist' in command else ('bad output ' + PASSWORD if self.malformed and 'EA:8C:' in command else STATION.replace(MAC.lower(), re.search(mcs.MAC, command)[0].lower()))
                     channel.sendall(output.encode())
                     channel.send_exit_status(0)
                 channel.shutdown_write()
@@ -108,12 +109,12 @@ class SshTransportTests(unittest.TestCase):
             hosts, approvals = Path(folder) / 'hosts', []
             result = self.capture(port, hosts, approve_host=lambda info: approvals.append(info) or True)
             self.assertEqual(result['status'], 'OK', result)
-            self.assertEqual([(p['mcs_1'], p['mcs_2']) for p in result['peers']], [(0, 11), (0, 11)])
+            self.assertEqual([(p['tx_bitrate'], p['rx_bitrate']) for p in result['peers']], [(TX, RX), (TX, RX)])
             self.assertEqual(dut.auth, ['technician'])
             self.assertEqual(dut.inputs, [(PASSWORD + '\n').encode()] * 3)
             self.assertEqual(dut.commands, [mcs.sudo_command('wlan2.2', 'peerlist'),
-                mcs.sudo_command('wlan2.2', 'peerratesinfo', 'EA:8C:B6:92:F0:B2'),
-                mcs.sudo_command('wlan2.2', 'peerratesinfo', 'AA:BB:CC:DD:EE:FF')])
+                mcs.sudo_command('wlan2.2', 'station', 'EA:8C:B6:92:F0:B2'),
+                mcs.sudo_command('wlan2.2', 'station', 'AA:BB:CC:DD:EE:FF')])
             self.assertNotIn(PASSWORD, str(result) + str(dut.commands) + hosts.read_text())
             self.assertTrue(approvals[0]['fingerprint'].startswith('SHA256:'))
             self.assertEqual(paramiko.HostKeys(str(hosts)).lookup(f'[127.0.0.1]:{port}')['ssh-rsa'], self.key)
@@ -151,7 +152,7 @@ class SshTransportTests(unittest.TestCase):
                 self.assertTrue(dut.auth)
                 if options.get('malformed'):
                     self.assertEqual(len(dut.commands), 3, 'A failed peer must not hide another station')
-                    self.assertEqual(result['peers'][1]['mcs_2'], 11)
+                    self.assertEqual(result['peers'][1]['rx_bitrate'], RX)
 
     def test_stop_cancels_inflight_command(self):
         with tempfile.TemporaryDirectory() as folder, server(self.key, hang=True) as (port, dut):

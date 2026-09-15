@@ -70,6 +70,7 @@ def summarize(samples: list[dict], state: str, error: str | None) -> dict:
         else:
             events.append({k: sample[k] for k in ('start', 'end')})
             events[-1]['min_mbps'] = sample['mbps']
+            events[-1]['detected_at'] = sample.get('observed_at', '')
         previous_low = True
     for event in events:
         event['seconds'] = event['end'] - event['start']
@@ -109,7 +110,7 @@ def save_summary(samples: list[dict], state: str, error: str | None, output: Pat
     summary = summarize(samples, state, error)
     (output / 'summary.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
     with (output / 'low_events.csv').open('w', encoding='utf-8', newline='') as handle:
-        writer = csv.DictWriter(handle, fieldnames=['start', 'end', 'min_mbps', 'seconds'])
+        writer = csv.DictWriter(handle, fieldnames=['start', 'end', 'min_mbps', 'seconds', 'detected_at'])
         writer.writeheader()
         writer.writerows(summary['events'])
     return summary
@@ -129,7 +130,7 @@ def collect(command: list[str], args: argparse.Namespace, output: Path, *,
     deadline = None if args.duration == 0 else time.monotonic() + args.duration + 20
     with (output / 'iperf.log').open('w', encoding='utf-8') as log, \
             (output / 'samples.csv').open('w', encoding='utf-8', newline='') as table:
-        writer = csv.DictWriter(table, fieldnames=['start', 'end', 'mbps', 'status'])
+        writer = csv.DictWriter(table, fieldnames=['start', 'end', 'mbps', 'status', 'observed_at'])
         writer.writeheader()
         try:
             if stop_event is not None and stop_event.is_set():
@@ -142,9 +143,9 @@ def collect(command: list[str], args: argparse.Namespace, output: Path, *,
             def read_output():
                 try:
                     for line in process.stdout:
-                        messages.put(line)
+                        messages.put((line, datetime.now().astimezone().isoformat(timespec='milliseconds')))
                 except Exception as exc:
-                    messages.put(f'iperf3: error - output reader failed: {exc}\n')
+                    messages.put((f'iperf3: error - output reader failed: {exc}\n', None))
                 finally:
                     messages.put(None)
 
@@ -162,11 +163,12 @@ def collect(command: list[str], args: argparse.Namespace, output: Path, *,
                     raise TimeoutError('Timed out draining stopped iperf3 output' if cancelled else
                                        'iperf3 exceeded duration + 20 seconds; partial data saved')
                 try:
-                    line = messages.get(timeout=0.2)
+                    message = messages.get(timeout=0.2)
                 except queue.Empty:
                     continue
-                if line is None:
+                if message is None:
                     break
+                line, observed_at = message
                 log.write(line)
                 log.flush()
                 if on_line is not None:
@@ -178,6 +180,7 @@ def collect(command: list[str], args: argparse.Namespace, output: Path, *,
                 sample = parse_interval(line, args.parallel)
                 if sample:
                     sample['status'] = classify(**sample, warmup=args.warmup, threshold=args.threshold)
+                    sample['observed_at'] = observed_at
                     if samples and abs(samples[-1]['end'] - sample['start']) > 0.011:
                         raise ValueError('Overlapping or missing measurement intervals; see iperf.log')
                     samples.append(sample)

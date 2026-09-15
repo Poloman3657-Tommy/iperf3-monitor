@@ -19,7 +19,7 @@ def check_package(report_path: str) -> int:
         import tkinter as tk
         import matplotlib
         import paramiko
-        from mcs import SshSettings, parse_mcs
+        from mcs import SshSettings, parse_station
         from gui import MonitorApp
         from gui_runner import app_directory, find_iperf
         from config_store import load_config
@@ -101,11 +101,13 @@ def check_package(report_path: str) -> int:
             raise RuntimeError('UDP throughput was not classified below the test threshold')
         if app.dispatcher is not None or (outcome.output / 'mcs-events.jsonl').exists():
             raise RuntimeError('Blank SSH IP unexpectedly started diagnostics')
-        if parse_mcs('-1 : MCS index\n0 : MCS index\n11 : MCS index') != [0, 11]:
-            raise RuntimeError('MCS parsing is incorrect')
+        if parse_station('Station EA:8C:B6:92:F0:B2 (on wlan2.2)\n signal: -56 dBm\n tx bitrate: 960.7 MBit/s HE-MCS 9\n rx bitrate: 1080.6 MBit/s HE-MCS 10', 'EA:8C:B6:92:F0:B2', 'wlan2.2')['rx_bitrate'] != '1080.6 MBit/s HE-MCS 10':
+            raise RuntimeError('Station parsing is incorrect')
         app.tree.selection_set('event-0')
         root.update()
         event = app.event_records[0]
+        if not event.get('detected_at') or not app.tree.set('event-0', 'date').startswith(event['detected_at'][:10]):
+            raise RuntimeError('Fail detection date is missing from the event table')
         left, right = app.viewport.limits(app._timeline_end())
         if not (left <= event['start'] <= event['end'] <= right):
             raise RuntimeError('Low-event selection did not focus its interval')

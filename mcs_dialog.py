@@ -1,18 +1,17 @@
 """SSH settings and a cancellable connection test; all Tk calls stay on the UI thread."""
 from dataclasses import asdict
-import json
 import queue
 import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from mcs import SshSettings, capture
+from mcs import SshSettings, capture, format_capture
 
 
 class SshDialog:
     def __init__(self, parent, settings, password, known_hosts, on_apply):
         self.window = tk.Toplevel(parent)
-        self.window.title('低速事件 SSH / MCS 設定')
+        self.window.title('低速事件 SSH / Station 設定')
         self.window.transient(parent)
         self.window.grab_set()
         self.window.protocol('WM_DELETE_WINDOW', self.close)
@@ -28,7 +27,7 @@ class SshDialog:
         box = ttk.Frame(self.window, padding=16)
         box.pack(fill='both', expand=True)
         self.inputs = []
-        enabled = ttk.Checkbutton(box, text='低速事件發生時擷取 MCS', variable=self.vars['enabled'])
+        enabled = ttk.Checkbutton(box, text='低速事件發生時擷取 Station 資料', variable=self.vars['enabled'])
         enabled.grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
         self.inputs.append(enabled)
         for row, (name, title) in enumerate([('host', 'SSH IP（空白＝不連線）'), ('port', 'SSH Port'),
@@ -45,7 +44,7 @@ class SshDialog:
                   wraplength=480).grid(row=6, column=0, columnspan=2, sticky='w', pady=10)
         buttons = ttk.Frame(box)
         buttons.grid(row=7, column=0, columnspan=2, sticky='ew')
-        self.test_button = ttk.Button(buttons, text='測試 SSH/MCS', command=self.test)
+        self.test_button = ttk.Button(buttons, text='測試 SSH/Station', command=self.test)
         self.test_button.pack(side='left')
         self.apply_button = ttk.Button(buttons, text='套用', command=self.apply)
         self.apply_button.pack(side='right')
@@ -117,7 +116,7 @@ class SshDialog:
                     parent=self.window))
                 ready.set()
             else:
-                self.show(json.dumps(value, ensure_ascii=False, indent=2))
+                self.show(format_capture(value))
                 for widget in [*self.inputs, self.test_button, self.apply_button]:
                     widget.configure(state='normal')
         self.job = self.window.after(100, self.poll)

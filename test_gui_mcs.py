@@ -9,7 +9,8 @@ import unittest
 from unittest.mock import patch
 
 from gui import MonitorApp
-from mcs import SshSettings
+from mcs import SshSettings, parse_station
+from test_station import STATION, MAC, TX, RX
 from mcs import McsDispatcher
 
 
@@ -39,8 +40,13 @@ class GuiMcsTests(unittest.TestCase):
         self.app.config = self.app.read_config(check_executable=False)
         with patch('gui.McsDispatcher', side_effect=AssertionError('Blank IP must skip SSH')):
             self.app.events.put(('started', Path(self.folder.name)))
-            self.app.events.put(('sample', dict(start=21, end=22, mbps=10, status='LOW')))
+            self.app.events.put(('sample', dict(start=21, end=22, mbps=10, status='LOW', observed_at='2026-09-15T14:32:08+08:00')))
             self.pump(lambda: len(self.app.samples) == 1)
+        self.app._update_metrics()
+        self.assertIn('2026-09-15 14:32:08', self.app.tree.set('event-0', 'date'))
+        self.app.tree.selection_set('event-0')
+        self.root.update()
+        self.assertIn('2026-09-15 14:32:08', self.app.mcs_detail.get('1.0', 'end'))
         self.app.edit_ssh()
         dialog = self.app.ssh_dialog
         with patch('mcs_dialog.capture', side_effect=AssertionError('Blank test must skip SSH')):
@@ -59,7 +65,7 @@ class GuiMcsTests(unittest.TestCase):
         captures = []
         def capture(*args):
             captures.append(True)
-            return dict(status='OK', peers=[dict(mac='EA:8C:B6:92:F0:B2', mcs_1=0, mcs_2=11)])
+            return dict(status='OK', peers=[dict(parse_station(STATION, MAC, 'wlan2.2'), status='OK')])
         with patch('mcs.capture', side_effect=capture):
             self.app.events.put(('started', Path(self.folder.name)))
             for a, status in [(0, 'WARMUP'), (20, 'LOW'), (21, 'LOW')]:
@@ -75,9 +81,9 @@ class GuiMcsTests(unittest.TestCase):
             self.app._update_metrics()
             self.assertEqual(len(captures), 2)
             self.assertEqual(self.app.tree.selection(), ('event-0',))
-            self.assertIn('0 / 11', self.app.tree.set('event-0', 'mcs'))
-            self.assertIn('0 / 11', self.app.tree.set('event-1', 'mcs'))
-            self.assertIn('"mcs_2": 11', self.app.mcs_detail.get('1.0', 'end'))
+            self.assertIn('TX 960.7 / RX 1080.6', self.app.tree.set('event-0', 'mcs'))
+            self.assertIn('TX 960.7 / RX 1080.6', self.app.tree.set('event-1', 'mcs'))
+            self.assertIn('rx bitrate: ' + RX, self.app.mcs_detail.get('1.0', 'end'))
             self.app.dispatcher.close(timeout=2)
 
     def test_close_keeps_event_loop_alive_until_cancel_record_is_saved(self):

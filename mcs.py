@@ -1,4 +1,4 @@
-"""Bounded, read-only SSH MCS capture; passwords are never part of saved settings."""
+"""Bounded, read-only SSH station capture; passwords are never part of saved settings."""
 from __future__ import annotations
 
 import base64
@@ -67,21 +67,47 @@ def parse_peers(text):
     return peers
 
 
-def parse_mcs(text):
-    values = [int(value) for value in re.findall(r'^\s*(-?\d+)\s*:\s*MCS index\s*$', text, re.MULTILINE)]
-    if len(values) < 2:
-        raise ValueError('peerratesinfo 不足兩筆 MCS index。')
-    return values[-2:]
+STATION_FIELDS = {'inactive time': 'inactive_time', 'signal': 'signal', 'signal avg': 'signal_avg',
+                  'tx bitrate': 'tx_bitrate', 'rx bitrate': 'rx_bitrate'}
+
+
+def parse_station(text, mac, vap):
+    """Preserve iw's units and PHY details; unavailable driver fields remain explicit."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    headers = [re.fullmatch(r'Station (' + MAC + r') \(on ([^)]+)\)', line) for line in lines]
+    headers = [header for header in headers if header]
+    if len(headers) != 1 or headers[0][1].upper() != mac.upper() or headers[0][2] != vap:
+        raise ValueError('iw station 回傳的 Station MAC／VAP 不符或缺少標頭。')
+    station = dict(mac=mac.upper(), vap=vap, **dict.fromkeys(STATION_FIELDS.values()))
+    for index, line in enumerate(lines):
+        label, separator, value = line.partition(':')
+        if not separator or label not in STATION_FIELDS:
+            continue
+        value = value.strip()
+        # Also tolerate copied output with the value on the following line.
+        if not value and index + 1 < len(lines):
+            candidate = lines[index + 1]
+            if ':' not in candidate and not candidate.startswith('Station '):
+                value = candidate
+        key = STATION_FIELDS[label]
+        if station[key] is not None:
+            raise ValueError(f'iw station 欄位重複：{label}')
+        station[key] = value or None
+    station['missing_fields'] = [key for key in STATION_FIELDS.values() if station[key] is None]
+    if len(station['missing_fields']) == len(STATION_FIELDS):
+        raise ValueError('iw station 未回傳 signal／bitrate 等指定欄位。')
+    return station
 
 
 def sudo_command(vap, operation, mac=None):
     if not re.fullmatch(r'wlan\d+(?:\.\d+)?', vap):
         raise ValueError('Invalid VAP')
-    args = ['dwpal_cli', vap, operation]
-    if operation == 'peerratesinfo' and mac and re.fullmatch(MAC, mac):
-        args.append(mac)
-    elif operation != 'peerlist' or mac is not None:
-        raise ValueError('Only peerlist and peerratesinfo commands are allowed')
+    if operation == 'station' and mac and re.fullmatch(MAC, mac):
+        args = ['iw', 'dev', vap, 'station', 'get', mac]
+    elif operation == 'peerlist' and mac is None:
+        args = ['dwpal_cli', vap, 'peerlist']
+    else:
+        raise ValueError('Only dwpal peerlist and iw station get commands are allowed')
     return "sudo -S -p '' -- sh -lc " + shlex.quote(shlex.join(args))
 
 
@@ -156,7 +182,7 @@ def _sudo(client, command, password, cancel, deadline):
             time.sleep(.02)
         stdout, stderr = (b''.join(parts).decode('utf-8', errors='replace') for parts in (out, err))
         if code != 0:
-            raise RuntimeError(f'sudo/dwpal exit {code}: {_redact((stderr or stdout).strip(), password)[:500]}')
+            raise RuntimeError(f'sudo/command exit {code}: {_redact((stderr or stdout).strip(), password)[:500]}')
         return stdout
     except Exception as exc:
         if cancel.is_set():
@@ -182,9 +208,9 @@ def _save_host_keys(client, path):
 
 
 def capture(settings, password, known_hosts, cancel=None, approve_host=None):
-    """Return all peers and their last two MCS values, with bounded execution time."""
+    """Return iw station details for all peers, with bounded execution time."""
     settings = coerce_settings(settings)
-    result = {'status': 'DISABLED', 'host': settings.host, 'port': settings.port,
+    result = {'status': 'DISABLED', 'source': 'iw_station', 'host': settings.host, 'port': settings.port,
               'vap': settings.vap, 'started_at': _timestamp(), 'peers': []}
     if not settings.active:
         return result  # Blank IP never opens a socket or requires Paramiko/password.
@@ -206,7 +232,7 @@ def capture(settings, password, known_hosts, cancel=None, approve_host=None):
                 fingerprint = 'SHA256:' + base64.b64encode(hashlib.sha256(key.asbytes()).digest()).decode().rstrip('=')
                 info = {'host': hostname, 'type': key.get_name(), 'fingerprint': fingerprint}
                 if cancel.is_set() or approve_host is None or not approve_host(info):
-                    raise paramiko.SSHException(f'主機指紋尚未確認：{hostname} {fingerprint}；請先使用「測試 SSH/MCS」。')
+                    raise paramiko.SSHException(f'主機指紋尚未確認：{hostname} {fingerprint}；請先使用「測試 SSH/Station」。')
                 ssh.get_host_keys().add(hostname, key.get_name(), key)
                 _save_host_keys(ssh, known_hosts)
 
@@ -233,10 +259,9 @@ def capture(settings, password, known_hosts, cancel=None, approve_host=None):
             peer = {'mac': mac}
             result['peers'].append(peer)
             try:
-                raw = _sudo(client, sudo_command(settings.vap, 'peerratesinfo', mac), password, cancel, deadline)
+                raw = _sudo(client, sudo_command(settings.vap, 'station', mac), password, cancel, deadline)
                 peer['raw'] = _redact(raw, password)
-                first, second = parse_mcs(raw)
-                peer.update(status='OK', mcs_1=first, mcs_2=second)
+                peer.update(parse_station(peer['raw'], mac, settings.vap), status='OK')
             except Exception as exc:
                 peer.update(status='ERROR', error=_redact(str(exc), password))
                 if cancel.is_set() or time.monotonic() >= deadline:
@@ -276,18 +301,19 @@ class McsDispatcher:
                 with (self.output / 'mcs-events.jsonl').open('a', encoding='utf-8') as handle:
                     handle.write(json.dumps(result, ensure_ascii=False) + '\n')
             except OSError as exc:
-                result = {**result, 'status': 'ERROR', 'error': f'MCS 紀錄儲存失敗：{exc}'}
+                result = {**result, 'status': 'ERROR', 'error': f'Station 紀錄儲存失敗：{exc}'}
         self.events.put(('mcs', result))
 
     def submit(self, event_id, sample):
         if not self.settings.active:
             return
         trigger = {'event_id': event_id, 'triggered_at': _timestamp(),
+                   'detected_at': sample.get('observed_at', ''),
                    'interval_start': sample['start'], 'interval_end': sample['end'], 'mbps': sample['mbps']}
         if self.closed:
             self._emit({**trigger, 'status': 'CANCELLED', 'error': '測試已停止。'})
         elif self.busy:
-            self._emit({**trigger, 'status': 'SKIPPED_BUSY', 'error': '前一個 MCS 查詢尚未結束。'})
+            self._emit({**trigger, 'status': 'SKIPPED_BUSY', 'error': '前一個 Station 查詢尚未結束。'})
         else:
             self._emit({**trigger, 'status': 'RUNNING'})
             def work():
@@ -311,7 +337,26 @@ def result_label(result):
     if not result:
         return '未啟用'
     if result['status'] == 'OK':
-        return '; '.join(f"{p['mac']}: {p['mcs_1']} / {p['mcs_2']}" for p in result['peers'])
+        return '; '.join(f"{p['mac']}: TX {(p.get('tx_bitrate') or '未提供').split(' MBit/s')[0]} / RX {(p.get('rx_bitrate') or '未提供').split(' MBit/s')[0]}" for p in result['peers'])
     return {'RUNNING': '查詢中', 'NO_PEERS': '無連線 peer', 'ERROR': '查詢錯誤',
             'CANCELLED': '已取消', 'SKIPPED_BUSY': '略過：前次查詢中',
             'DISABLED': '未啟用'}.get(result['status'], result['status'])
+
+
+def format_capture(result):
+    """Readable station fields, plus capture context and explicit per-peer failures."""
+    lines = [f"狀態：{result['status']}"]
+    labels = {'event_id': '事件編號（從 1 起）', 'detected_at': 'Fail 偵測日期時間（本機）',
+              'host': 'SSH IP', 'vap': 'VAP', 'triggered_at': 'SSH 觸發時間',
+              'started_at': 'SSH 查詢開始', 'finished_at': 'SSH 查詢結束', 'error': '錯誤'}
+    for key, label in labels.items():
+        if key in result:
+            value = result[key] + 1 if key == 'event_id' else str(result[key]).replace('T', ' ') if key.endswith('_at') else result[key]
+            lines.append(f'{label}: {value or "未提供"}')
+    for peer in result.get('peers', []):
+        lines.extend(['', f"Station {peer['mac']} (on {peer.get('vap', result.get('vap', '—'))})"])
+        if peer.get('error'):
+            lines.append(f"錯誤：{peer['error']}")
+        for label, key in STATION_FIELDS.items():
+            lines.append(f"{label}: {peer.get(key) or '未提供'}")
+    return '\n'.join(lines)

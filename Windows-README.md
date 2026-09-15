@@ -74,30 +74,49 @@ UDP 仍以吞吐量判斷 PASS／LOW；丟包與 jitter 保留在 `iperf.log`，
 
 本次已驗證 Windows client 對 NUC Linux server 的雙條 UDP 下載。包內 Cygwin iperf3 3.16 若作為 **Windows server**，多條 UDP 連線可能失敗；該情境請用單條連線或 Linux server。程式會保留原始錯誤，不會偷偷改成 TCP。
 
-## SSH / MCS 設定
+## SSH / Station 設定
 
-1. 按右上角「SSH / MCS 設定」，勾選「低速事件發生時擷取 MCS」。
-2. 填寫設備的 SSH IP、port（預設 22）、帳號（預設 `technician`）及 VAP（例如 `wlan2.2`）。**IP 空白或未勾選啟用，都不會建立 SSH 連線**，包括「測試 SSH/MCS」按鈕。
-3. 輸入本次 SSH／sudo 共用密碼。密碼欄遮蔽顯示，只保留在程式記憶體，不寫入設定或測試紀錄。
-4. 按「測試 SSH/MCS」：首次連線會顯示 SHA-256 主機指紋，請與設備核對後確認。信任記錄存於程式旁的 `ssh_known_hosts`；自動低速擷取不會直接信任未知主機。主機金鑰改變時拒絕連線，需確認設備變更後處理舊記錄。此確認只信任主機身分，不修改設備設定。
-5. 按「套用」回主視窗；需要保存 IP／port／帳號／VAP／啟用狀態時，再按「儲存設定」。下次啟動仍需輸入密碼。舊版設定缺少 `ssh` 時預設關閉。
+1. 按「SSH / Station 設定」，勾選低速事件擷取，填寫 SSH IP、port（預設 22）、帳號（預設 `technician`）及 VAP（例如 `wlan2.2`）。**IP 留白或未啟用時完全不連線**，手動測試亦同。
+2. 輸入 SSH／sudo 共用密碼，只保留於本次程式執行，不寫入設定、命令列或日誌。
+3. 按「測試 SSH/Station」，首次連線請核對設備 SHA-256 主機指紋並確認，信任記錄存於程式旁的 `ssh_known_hosts`。自動查詢拒絕未知主機；金鑰改變時也拒絕，請確認設備變更後處理舊記錄。
+4. 按「套用」回主畫面，需要保存參數時再按「儲存設定」。下次啟動需重新輸入密碼。舊 `config.json` 與 `ssh_known_hosts` 可沿用。
 
-暖機後每次低速事件開始時，背景執行 `dwpal_cli <VAP> peerlist`，對所有 MAC 執行 `dwpal_cli <VAP> peerratesinfo <MAC>`，解析最後兩筆 `MCS index`。例如三筆為 `-1、0、11`，MCS 1＝0、MCS 2＝11；欄位名稱只代表最後兩筆的順序，不推定 TX／RX。以同一密碼經標準輸入交給 `sudo -S -p '' -- sh -lc ...` 取得 root 權限，效果等同以 root 執行這兩種查詢，不需要互動式 `sudo su`。設備必須允許無終端的 sudo 密碼驗證，且 root 登入 shell 可找到 `dwpal_cli`。
+暖機後每個 LOW 事件開始時，以 root 權限執行以下唯讀命令；IP／VAP 可設定，MAC 自動來自清單：
 
-連續低速只查詢一次，恢復正常後再次低速才重抓；資料中断也會依事件表分成新事件。每次最多一個背景查詢，正在查詢時再有新事件會記錄 `SKIPPED_BUSY`，避免查詢累積。連線／驗證各階段有 7 秒逾時，連線後所有 dwpal 查詢共享 25 秒期限，每條輸出最多 2 MiB。
+```sh
+dwpal_cli wlan2.2 peerlist
+iw dev wlan2.2 station get EA:8C:B6:92:F0:B2
+```
 
-事件表顯示 MCS 或錯誤狀態。選取事件，再開啟「低速 MCS 資料」頁籤可查看詳細 JSON。結果資料夾內的 `mcs-events.jsonl` 逐行追加開始／完成紀錄，包含 `event_id`（從 0 開始，對應事件表順序）、觸發區間與速率、擷取時間、MAC、MCS 和原始輸出。狀態包括 `RUNNING`、`OK`、`NO_PEERS`、`ERROR`、`SKIPPED_BUSY`、`CANCELLED`；同一事件以最後一筆為準。IP 空白不建立此檔案。
+程式透過 `sudo -S -p '' -- sh -lc ...` 執行，密碼經標準輸入送入。設備需允許無終端 sudo 驗證，root 的 PATH 需能找到 `dwpal_cli` 和 `iw`。直接取得完整 iw 輸出後，在本機選取下列欄位顯示；等同你指定的 `grep -E "Station |inactive|signal|tx bitrate|rx bitrate"` 欄位，保留原始輸出供查核，亦保留 iw 命令本身的錯誤狀態。
 
-SSH 失敗或沒有 peer 會明確記錄，吞吐量測試繼續，PASS／LOW 仍只看速率。手動停止／關閉會取消查詢；定時測試自然結束時，已開始的查詢可完成，期間「開始測速」暫時停用。MCS 是查詢當下的狀態，可能晚於低速取樣，不代表兩者精確同步。手動「測試 SSH/MCS」結果僅顯示於設定視窗。
+```text
+Station EA:8C:B6:92:F0:B2 (on wlan2.2)
+inactive time: 0 ms
+signal: -56 [-58] dBm
+signal avg: -56 dBm
+tx bitrate: 960.7 MBit/s 80MHz HE-MCS 9 HE-NSS 2 HE-GI 0 HE-DCM 0
+rx bitrate: 1080.6 MBit/s 80MHz HE-MCS 10 HE-NSS 2 HE-GI 0 HE-DCM 0
+```
 
-升級時可保留自己的 `config.json` 與 `ssh_known_hosts`。此功能已使用本機模擬 SSH 設備及真正 Tk 介面驗證，尚未對你的設備實測。
+詳細頁保留完整值、單位與 PHY 字串，設備沒提供的欄位顯示「未提供」；不強制要求 HE-MCS，因此也接受一般 legacy／HT／VHT bitrate。Station MAC／VAP 不符、命令失敗或沒有任何指定欄位時，顯示查詢錯誤。單一 peer 失敗會繼續查其他 peer。
+
+連續低速只查詢一次，恢復正常後再低速才重抓。每次最多一個背景查詢，新事件若碰到前次尚未結束會記 `SKIPPED_BUSY`。連線／驗證各階段有 7 秒逾時，連線後全部遠端查詢共享 25 秒期限，每條輸出上限 2 MiB。停止會取消查詢；關閉視窗會等取消結果保存。定時測試自然結束時，已啟動的查詢可完成，期間不能開始另一輪。
+
+事件表顯示 TX／RX 速率摘要與 **Fail 偵測日期時間（本機）**；欄位較多時可拉動表格底下的水平捲軸。選取事件後，「低速 Station 資料」顯示 Station 欄位及日期時間。日期格式例如 `2026-09-15 14:32:08.123+08:00`，表示本機收到第一筆低速區間報告的時間，**不是設備端 date，也不是區間開始時間的推算**。SSH IP 空白亦記錄日期；連續低速跨日保留首次日期，恢復後再低速才產生新日期。準確性取決於本機時鐘與 iperf 輸出延遲。SSH 觸發、開始與結束時間另外保留。
+
+`samples.csv` 新增 `observed_at`，`low_events.csv` 與 `summary.json` 事件新增 `detected_at`，均以含時區的 ISO 8601 記錄。舊人工資料若沒有日期，畫面顯示「未提供」，不猜測。
+
+Station 結果仍保存到 `mcs-events.jsonl` 以沿用原檔名。每行為一次狀態更新，同一 `event_id`（從 0 起）以最後一筆為準。完成紀錄包含 `source: "iw_station"`、`detected_at`、SSH 各階段時間、`peers`，每個 peer 包含 `mac`、`vap`、`inactive_time`、`signal`、`signal_avg`、`tx_bitrate`、`rx_bitrate`、`missing_fields`、`raw` 及成功／錯誤狀態；缺少的值為 null。新版不再產生舊版的 `mcs_1`、`mcs_2`。
+
+狀態包含 `RUNNING`、`OK`、`NO_PEERS`、`ERROR`、`SKIPPED_BUSY`、`CANCELLED`。IP 留白不建立 SSH 紀錄檔，測速 CSV／JSON 的日期仍會保存。SSH 錯誤不改變吞吐量 PASS／LOW；查詢到的 Station 狀態可能晚於 fail。手動測試僅在設定視窗顯示結果。已通過本機模擬 SSH 與真正 Tk 測試，尚未對你的設備實測。
 
 ## 檔案結構
 
-ZIP 與 SHA-256 檔名都包含版本號，例如 `iperf-monitor-windows-x64-v1.4.0.zip` 和 `iperf-monitor-windows-x64-v1.4.0.zip.sha256`。解壓縮的外層資料夾也會包含版本號，內部 EXE 保持原名。
+ZIP 與 SHA-256 檔名都包含版本號，例如 `iperf-monitor-windows-x64-v1.5.0.zip` 和 `iperf-monitor-windows-x64-v1.5.0.zip.sha256`。解壓縮的外層資料夾也會包含版本號，內部 EXE 保持原名。
 
 ```text
-IperfMonitor-v1.4.0/       以 v1.4.0 為例
+IperfMonitor-v1.5.0/       以 v1.5.0 為例
   IperfMonitor.exe        桌面程式
   config.json             預設／已儲存設定
   _internal/              Python、Tk 與繪圖執行環境

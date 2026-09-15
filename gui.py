@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 from pathlib import Path
 import platform
@@ -35,7 +34,7 @@ from gui_runner import RunConfig, RunOutcome, app_directory, find_iperf, run_tes
 from config_store import load_config, save_config
 from charting import draw_throughput
 from viewport import TimeViewport, elapsed_label
-from mcs import LowEventGate, McsDispatcher, result_label
+from mcs import LowEventGate, McsDispatcher, result_label, format_capture
 from mcs_dialog import SshDialog
 import monitor
 
@@ -121,7 +120,7 @@ class MonitorApp:
         self.save_button = ttk.Button(header, text='儲存設定', command=self.save_settings)
         self.save_button.pack(side='right', padx=(0, 8))
         self.controls.append((self.save_button, 'normal'))
-        self.ssh_button = ttk.Button(header, text='SSH / MCS 設定', command=self.edit_ssh)
+        self.ssh_button = ttk.Button(header, text='SSH / Station 設定', command=self.edit_ssh)
         self.ssh_button.pack(side='right', padx=(0, 8))
         self.controls.append((self.ssh_button, 'normal'))
         body = ttk.Frame(outer)
@@ -187,7 +186,7 @@ class MonitorApp:
         tabs.add(chart_tab, text='即時曲線與低速事件')
         tabs.add(log_tab, text='iperf3 原始輸出')
         mcs_tab = ttk.Frame(tabs)
-        tabs.add(mcs_tab, text='低速 MCS 資料')
+        tabs.add(mcs_tab, text='低速 Station 資料')
         ttk.Label(mcs_tab, textvariable=self.mcs_status, wraplength=700).pack(fill='x', padx=8, pady=8)
         self.mcs_detail = tk.Text(mcs_tab, wrap='word', state='disabled', height=15)
         mcs_scroll = ttk.Scrollbar(mcs_tab, command=self.mcs_detail.yview)
@@ -223,16 +222,21 @@ class MonitorApp:
         self.timeline_scroll.pack(fill='x', padx=6, pady=(1, 4))
         event_box = ttk.Frame(chart_tab)
         event_box.pack(fill='x', padx=5)
-        self.tree = ttk.Treeview(event_box, columns=('start', 'end', 'seconds', 'minimum', 'mcs'), show='headings', height=5, selectmode='browse')
+        self.tree = ttk.Treeview(event_box, columns=('date', 'start', 'end', 'seconds', 'minimum', 'mcs'), show='headings', height=5, selectmode='browse')
+        self.tree.heading('date', text='Fail 偵測日期時間（本機）')
+        self.tree.column('date', width=240, minwidth=230)
         for col, title in [('start', '開始（秒）'), ('end', '結束（秒）'), ('seconds', '持續（秒）'), ('minimum', '最低 Mbps')]:
             self.tree.heading(col, text=title)
             self.tree.column(col, width=105, anchor='e')
-        self.tree.heading('mcs', text='MCS 1 / MCS 2')
+        self.tree.heading('mcs', text='Station TX / RX (MBit/s)')
         self.tree.column('mcs', width=175, minwidth=100)
         event_scroll = ttk.Scrollbar(event_box, orient='vertical', command=self.tree.yview)
         self.tree.configure(yscrollcommand=event_scroll.set)
         event_scroll.pack(side='right', fill='y')
         self.tree.pack(side='left', fill='x', expand=True)
+        event_horizontal = ttk.Scrollbar(chart_tab, orient='horizontal', command=self.tree.xview)
+        self.tree.configure(xscrollcommand=event_horizontal.set)
+        event_horizontal.pack(fill='x', padx=5)
         self.tree.bind('<<TreeviewSelect>>', self._on_event_selected)
         self.tree.bind('<ButtonRelease-1>', self._on_event_clicked)
         ttk.Label(chart_tab, textvariable=self.event_caption).pack(anchor='w', padx=5, pady=4)
@@ -315,7 +319,7 @@ class MonitorApp:
     def _show_mcs(self, result):
         self.mcs_detail.configure(state='normal')
         self.mcs_detail.delete('1.0', 'end')
-        self.mcs_detail.insert('end', json.dumps(result, ensure_ascii=False, indent=2) if result else '此事件未啟用 SSH 擷取。')
+        self.mcs_detail.insert('end', format_capture(result) if result else '此事件未啟用 SSH 擷取。')
         self.mcs_detail.configure(state='disabled')
 
     def _receive_mcs(self, result):
@@ -336,7 +340,7 @@ class MonitorApp:
         try:
             config = self.read_config()
             if config.ssh.active and (not self.ssh_password or any(c in self.ssh_password for c in ('\r', '\n', '\0'))):
-                raise ValueError('請在「SSH / MCS 設定」輸入本次 SSH/sudo 密碼（不可包含換行）。')
+                raise ValueError('請在「SSH / Station 設定」輸入本次 SSH/sudo 密碼（不可包含換行）。')
         except ValueError as exc:
             self.status.set(str(exc))
             self.status_label.configure(foreground='#c6373e')
@@ -458,7 +462,8 @@ class MonitorApp:
         # Stable row IDs preserve selection and scroll position as later events arrive.
         for index in range(max(0, self.tree_rows-1), len(self.event_records)):
             event = self.event_records[index]
-            values = tuple(f'{event[key]:.3f}' for key in ('start', 'end', 'seconds', 'min_mbps'))
+            values = (event.get('detected_at', '').replace('T', ' ') or '未提供',)
+            values += tuple(f'{event[key]:.3f}' for key in ('start', 'end', 'seconds', 'min_mbps'))
             values += (result_label(self.mcs_results.get(index)),)
             item = f'event-{index}'
             if self.tree.exists(item):
@@ -531,7 +536,8 @@ class MonitorApp:
         if index >= len(self.event_records):
             return
         event = self.event_records[index]
-        self._show_mcs(self.mcs_results.get(index))
+        self._show_mcs(self.mcs_results.get(index) or dict(status='DISABLED', event_id=index,
+                                                        detected_at=event.get('detected_at', ''), peers=[]))
         self.viewport.focus_event(event['start'], event['end'], self._timeline_end())
         self._draw()
 

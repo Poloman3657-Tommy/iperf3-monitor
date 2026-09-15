@@ -9,7 +9,7 @@
 - `iperf-monitor-windows-x64-v<版本>.zip`：Windows x64 免安裝包。
 - `iperf-monitor-windows-x64-v<版本>.zip.sha256`：對應版本的 SHA-256 校驗碼。
 
-例如 v1.4.0 的檔名是 `iperf-monitor-windows-x64-v1.4.0.zip`，解壓縮後會建立 `IperfMonitor-v1.4.0` 資料夾。請從上方「最新 Release」選擇需要的版本；歷史版本也使用各自的版本號。
+例如 v1.5.0 的檔名是 `iperf-monitor-windows-x64-v1.5.0.zip`，解壓縮後會建立 `IperfMonitor-v1.5.0` 資料夾。請從上方「最新 Release」選擇需要的版本；歷史版本也使用各自的版本號。
 
 1. 將 ZIP **完整解壓縮**到可寫入的資料夾。
 2. 進入 `IperfMonitor-v<版本>` 資料夾，開啟 `IperfMonitor.exe`。
@@ -54,17 +54,17 @@ PNG 保存整段測試總覽，採用停止當下的單位；縮放或其後切�
 - 手動查看歷史時，新資料不會重設檢視範圍。按「跟隨最新」恢復追蹤，按「顯示全部」回到總覽。
 - 多天總覽使用最高／最低及低速代表點加快繪圖；放大後恢復該區間逐筆資料。原始紀錄、統計及低速事件不刪減。
 
-## 低速時透過 SSH 擷取 MCS
+## 低速時透過 SSH 擷取 Station 資訊
 
-右上角「SSH / MCS 設定」可設定 SSH IP、port、帳號、VAP 與本次密碼。預設關閉，**IP 留白時完全不連線**。勾選啟用並填入設備 IP 後，先按「測試 SSH/MCS」，核對首次連線的設備主機指紋，再按「套用」。按主視窗「儲存設定」可保存 IP 等參數；密碼不會保存，重開程式需重新輸入。
+右上角「SSH / Station 設定」可設定 SSH IP、port、帳號、VAP 與本次密碼。預設關閉，**IP 留白時完全不連線**。啟用後先按「測試 SSH/Station」核對主機指紋，再按「套用」；主視窗「儲存設定」會保存 IP 等參數，密碼只保留本次執行。
 
-暖機後每個低速事件開始時擷取一次：先執行 `dwpal_cli <VAP> peerlist`，再對每個 MAC 執行 `peerratesinfo`，取得最後兩筆 `MCS index`。例如 `-1、0、11` 顯示 **MCS 1＝0、MCS 2＝11**；不推定它們是 TX／RX。
+暖機後每個低速事件開始時，先執行 `dwpal_cli <VAP> peerlist`，再對每個 MAC 執行 `iw dev <VAP> station get <MAC>`。詳細頁顯示 Station、inactive time、signal、signal avg、完整 tx bitrate／rx bitrate，包括頻寬、HE-MCS、HE-NSS、HE-GI、HE-DCM。設備未提供的欄位明確顯示「未提供」。
 
-結果顯示於事件表；選取事件後可到「低速 MCS 資料」頁籤查看完整紀錄。每次擷取的觸發時間、MAC、MCS、原始輸出與錯誤保存至 `mcs-events.jsonl`。連續低速不重複擷取；恢復正常後再次低速會重新觸發。前次查詢未結束時，新事件明確記為 `SKIPPED_BUSY`。
+選取事件後，到「低速 Station 資料」查看各 MAC 的欄位。連續低速擷取一次，恢復正常後再低速會重新觸發；查詢忙碌時記錄 `SKIPPED_BUSY`。單一 peer 失敗會保留錯誤並繼續其他 peer；SSH 失敗不影響吞吐量判定。
 
-SSH 在背景執行；使用同一密碼經標準輸入交給 `sudo -S`，以 root 權限執行上述查詢。SSH 失敗不改變吞吐量的 PASS／LOW 判定。擷取有連線／命令逾時，停止測試會取消查詢；MCS 是查詢當下的狀態，可能晚於低速取樣。詳細設定及主機指紋說明見 [Windows 說明](Windows-README.md#ssh--mcs-設定)。
+**Fail 日期時間**顯示於事件表及詳細頁，使用本機收到第一筆低速報告的日期時間，包含時區，例如 `2026-09-15 14:32:08.123+08:00`。SSH 未啟用也會記錄。此時間是偵測時間，並非回推區間開始或設備端 `date`；SSH 觸發與查詢時間另列，方便辨識延遲。連續事件跨午夜仍保留首次偵測時間。
 
-此功能已通過本機模擬 SSH 設備與 GUI 測試；未提供實際 SSH IP，因此尚未驗證你的設備輸出與 sudo 環境。
+Station 結果沿用 `mcs-events.jsonl` 檔名，內容改為 `source: "iw_station"`、各 peer 的 Station 欄位與原始輸出；不再產生 `mcs_1`／`mcs_2`。詳細說明見 [Windows 說明](Windows-README.md#ssh--station-設定)。已通過本機模擬 SSH 及 GUI 測試；尚未對你的實際 SSH 設備驗證。
 
 ## 儲存設定
 
@@ -90,11 +90,11 @@ UDP 丟包和 jitter 留在原始 log，這版 PASS／LOW 只判斷吞吐量。�
 |---|---|
 | `throughput.png` | 速率曲線、暖機與低速標記 |
 | `iperf.log` | iperf3 原始輸出及錯誤 |
-| `samples.csv` | 每個取樣的起訖、Mbps 和狀態 |
-| `low_events.csv` | 合併後的低速時段與最低速率 |
+| `samples.csv` | 每個取樣的起訖、Mbps、狀態與本機接收日期 `observed_at` |
+| `low_events.csv` | 合併後的低速時段、最低速率與首次偵測日期 `detected_at` |
 | `summary.json` | 統計與最終結果 |
 | `run.json` | 當次實際參數及執行命令 |
-| `mcs-events.jsonl` | 啟用 SSH 且觸發低速時的查詢狀態、各 peer 的 MCS 與原始輸出 |
+| `mcs-events.jsonl` | 啟用 SSH 且觸發低速時的查詢狀態、各 peer 的 Station 欄位與原始輸出 |
 
 只有正常完成且無低速才是 PASS。LOW 表示完成但有低速；INTERRUPTED 表示手動停止；ERROR 表示測試或輸出失敗；NO_DATA 表示沒有暖機後的有效資料。持續模式按停止後顯示 INTERRUPTED，並保留已有統計。
 

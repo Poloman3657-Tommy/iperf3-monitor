@@ -23,13 +23,6 @@ class McsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.mcs.parse_peers('1 peer(s) connected:\nnot-a-mac\n')
 
-    def test_extracts_last_two_mcs_values_without_inventing_direction(self):
-        text = ' -1 : MCS index\n 0 : MCS index\n 11 : MCS index\n'
-        self.assertEqual(self.mcs.parse_mcs(text), [0, 11])
-        self.assertEqual(self.mcs.parse_mcs('2 : MCS index\n-1 : MCS index\n'), [2, -1])
-        with self.assertRaises(ValueError):
-            self.mcs.parse_mcs('11 : MCS index')
-
     def test_gate_ignores_warmup_and_retriggers_only_after_recovery(self):
         gate = self.mcs.LowEventGate()
         observed = [gate.observe(s) for s in ['WARMUP', 'LOW', 'LOW', 'OK', 'LOW', 'LOW']]
@@ -107,9 +100,9 @@ class McsTests(unittest.TestCase):
                 self.mcs.SshSettings(**(dict(enabled=True, host='192.0.2.10') | changed)).validated()
         self.assertFalse(self.mcs.SshSettings(enabled=True, host='').validated().active)
         valid = self.mcs.SshSettings(enabled=True, host='192.0.2.10', vap='wlan2.2').validated()
-        command = self.mcs.sudo_command(valid.vap, 'peerratesinfo', 'EA:8C:B6:92:F0:B2')
+        command = self.mcs.sudo_command(valid.vap, 'station', 'EA:8C:B6:92:F0:B2')
         self.assertIn('sudo -S', command)
-        self.assertIn('dwpal_cli', command)
+        self.assertIn('iw dev', command)
         self.assertIn('wlan2.2', command)
         with self.assertRaises(ValueError):
             self.mcs.sudo_command('wlan2.2', 'reboot')

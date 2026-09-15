@@ -2,7 +2,7 @@
 
 **Windows 不想安裝相依套件：** 到 [最新 Release](https://github.com/Poloman3657-Tommy/iperf3-monitor/releases/latest) 下載帶版本號的 Windows x64 免安裝 ZIP，完整解壓縮後進入對應版本資料夾，開啟 `IperfMonitor.exe`。包內已含 Python、Tk、Matplotlib 與 iperf3；不需 pip。詳細步驟見 [Windows 說明](Windows-README.md)。以下是 Python 原始碼版的使用與開發方式。
 
-Windows 打包時必須指定版本，例如 `python zip_windows_bundle.py --version v1.4.0`。輸出 ZIP、SHA-256 和外層資料夾會使用相同版本號；若同版本檔案已存在，工具會拒絕覆寫。
+Windows 打包時必須指定版本，例如 `python zip_windows_bundle.py --version v1.5.0`。輸出 ZIP、SHA-256 和外層資料夾會使用相同版本號；若同版本檔案已存在，工具會拒絕覆寫。
 
 按「開始測速」會**直接啟動本機 iperf3**，每秒更新速率曲線及低速事件；不需要 HTML、下載測試腳本或手動匯入 log。
 
@@ -107,8 +107,8 @@ macOS 請使用含可用 Tkinter 的 Python；可先用 `python3 -m tkinter` 檢
 
 - `gui.py`：Tk 表單、即時曲線、事件佇列及主視窗生命週期。
 - `gui_runner.py`：不可變設定、路徑驗證、背景測速；不呼叫 Tk。
-- `mcs.py`：SSH 設定與命令白名單、主機金鑰驗證、可取消的 MCS 擷取、每事件觸發與 JSONL。只有有效 IP 且啟用才建立連線；密碼不屬於 `RunConfig`，不會進入 `asdict`／設定或 `run.json`。
-- `mcs_dialog.py`：SSH 設定與手動測試視窗；worker 透過佇列請主執行緒確認首次主機指紋，不直接存取 Tk。使用方式見 [SSH / MCS 設定](Windows-README.md#ssh--mcs-設定)。
+- `mcs.py`：SSH 設定與命令白名單、主機金鑰驗證、可取消的 iw Station 擷取與欄位顯示、每事件觸發與 JSONL。只有有效 IP 且啟用才建立連線；密碼不屬於 `RunConfig`，不會進入 `asdict`／設定或 `run.json`。
+- `mcs_dialog.py`：SSH 設定與手動測試視窗；worker 透過佇列請主執行緒確認首次主機指紋，不直接存取 Tk。使用方式見 [SSH / Station 設定](Windows-README.md#ssh--station-設定)。
 - `config_store.py`：設定檔驗證、相對路徑與原子儲存。
 - `charting.py`：即時圖／PNG 共用的時間刻度、原始取樣標記與不超調的平滑連線。
 - `viewport.py`：全部／歷史／跟隨模式、橫向縮放與捲動、低速事件定位。
@@ -118,7 +118,7 @@ macOS 請使用含可用 Tkinter 的 Python；可先用 `python3 -m tkinter` 檢
 
 ```bat
 ..\.venv\Scripts\python.exe -m unittest -v test_viewport test_charting test_config_store test_gui_runner test_monitor
-..\.venv\Scripts\python.exe -m unittest -v test_mcs test_mcs_transport test_zip_bundle
+..\.venv\Scripts\python.exe -m unittest -v test_mcs test_mcs_transport test_station test_fail_dates test_zip_bundle
 ..\.venv\Scripts\python.exe -m unittest -v test_gui_mcs
 ..\.venv\Scripts\python.exe validate_navigation.py
 ..\.venv\Scripts\python.exe validate_settings_gui.py --iperf D:\iperf3.16_64\iperf3.exe
@@ -128,8 +128,10 @@ macOS 請使用含可用 Tkinter 的 Python；可先用 `python3 -m tkinter` 檢
 ..\.venv\Scripts\python.exe validate_gui.py --iperf D:\iperf3.16_64\iperf3.exe --live --udp
 ```
 
-單元／子程序測試涵蓋設定、TCP／UDP、取樣判定、停止保存、時間單位、曲線、縮放與拖移邊界。SSH 測試使用真正本機 SSH 協定與模擬 DUT，驗證多個 peer、最後兩筆 MCS、sudo 標準輸入、未知／變更主機金鑰拒絕、取消、錯誤與秘密遮蔽；另有空白 IP 不連線、事件觸發與逾時測試。`test_gui_mcs` 需要可用的圖形桌面，驗證真正 Tk 設定操作與事件列對應。尚未對實際 SSH 設備驗證。
+單元／子程序測試涵蓋設定、TCP／UDP、取樣判定、停止保存、時間單位、曲線、縮放與拖移邊界。SSH 測試使用真正本機 SSH 協定與模擬 DUT，驗證多個 peer、Station 欄位、完整 TX／RX bitrate、sudo 標準輸入、未知／變更主機金鑰拒絕、取消、錯誤與秘密遮蔽；另有空白 IP 不連線、事件觸發與逾時測試。`test_gui_mcs` 需要可用的圖形桌面，驗證真正 Tk 設定操作與事件列對應。尚未對實際 SSH 設備驗證。
 
 真正 Tk/Matplotlib 操作驗證使用四天人工資料及 173 次低速事件，確認滾輪、拖移回原位、水平捲軸、重複事件定位、歷史範圍保持及跟隨模式；這不是多天耐久測試。Windows EXE 的真實回環測試亦確認新取樣不會重設歷史檢視，且低速事件可定位。Ubuntu／macOS 尚未有原生 GUI 實測。
 
 2026-09-11 以 GUI 流程實測 NUC `192.168.137.57:4477`，下載 60 秒，前 20 秒忽略：最低 **496.441 Mbps**，加權平均 **850.017 Mbps**，低速 **0 次**，結果 PASS。這只代表該次觀察，長期監測可增加秒數。
+
+Fail 日期由 `monitor.collect` 的 stdout 讀取執行緒在收到每行時建立 `observed_at`，避免 GUI／SSH 的排隊時間污染日期。`summarize` 合併 LOW 時保留首筆 `detected_at`，空白 SSH IP 不影響此流程。對應測試涵蓋固定時鐘、跨午夜合併、CSV 匯出與真正 Tk 顯示。
