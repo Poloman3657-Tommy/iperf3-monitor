@@ -62,7 +62,7 @@ for name, url in remote.items():
     shutil.copy2(cached, licenses / name)
     print('License:', name)
 sources = ['desktop_entry.py', 'package_check.py', 'gui.py', 'gui_runner.py', 'config_store.py',
-           'repeat_schedule.py',
+           'repeat_schedule.py', 'result_folders.py',
            'html_report.py', 'report_assets/report.html', 'report_assets/report.css', 'report_assets/report.js',
            'config.example.json', 'charting.py', 'viewport.py', 'monitor.py', 'mcs.py', 'mcs_dialog.py', 'build-windows.spec']
 manifest = {

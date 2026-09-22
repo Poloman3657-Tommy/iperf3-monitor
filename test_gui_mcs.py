@@ -25,8 +25,9 @@ class GuiMcsTests(unittest.TestCase):
             release.wait(3)
             return dict(status='ERROR', error='late station result', peers=[])
         with patch('mcs.capture', side_effect=late_station):
-            output = Path(self.folder.name)
-            self.app.config = self.app.read_config(check_executable=False)
+            output = Path(self.folder.name) / 'run'
+            output.mkdir()
+            self.app.config = replace(self.app.read_config(check_executable=False),output=output.parent)
             self.app.dispatcher = McsDispatcher(SshSettings(enabled=True, host='192.0.2.10'), 'dummy', output, self.app.events, output / 'hosts')
             sample = dict(start=20, end=21, mbps=10, status='LOW')
             self.app.dispatcher.submit(0, sample)
@@ -38,6 +39,9 @@ class GuiMcsTests(unittest.TestCase):
             release.set()
             self.pump(lambda: self.app.report_file is not None)
             self.assertIn('late station result', self.app.report_file.read_text(encoding='utf-8'))
+            self.assertTrue(self.app.output.name.endswith('_LOW'))
+            self.assertEqual(self.app.output,self.app.report_file.parent)
+            self.assertIn('late station result',(self.app.output/'mcs-events.jsonl').read_text(encoding='utf-8'))
 
     def test_close_waits_for_report_and_export_errors_are_visible(self):
         self.assertTrue(hasattr(self.app, 'report_pending'), 'HTML lifecycle is missing')

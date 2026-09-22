@@ -40,6 +40,7 @@ from mcs import LowEventGate, McsDispatcher, result_label, format_capture
 from mcs_dialog import SshDialog
 from html_report import save_report
 from repeat_schedule import RepeatSchedule
+from result_folders import mark_low_folder, update_run_path
 import monitor
 
 TIME_LABELS = {'自動': 'auto', '秒': 'seconds', '分': 'minutes', '時': 'hours', '天': 'days'}
@@ -515,7 +516,9 @@ class MonitorApp:
                 self._receive_mcs(value)
             elif kind == 'report':
                 self.report_worker = None
-                self.report_file, error = value
+                self.report_file, error, self.output = value
+                self.path_status.set(f'保存位置：{self.output}')
+                self.folder_button.configure(state='normal' if self.output and self.output.is_dir() else 'disabled')
                 self.report_status.set(f'HTML 儲存失敗：{error}' if error else f'HTML 已保存：{self.report_file}')
                 self.report_button.configure(state='normal' if self.report_file else 'disabled')
                 if error:
@@ -713,17 +716,23 @@ class MonitorApp:
         self.report_pending = False
         outcome, unit, events = self.last_outcome, self.report_time_unit, self.events
         self.report_status.set('正在保存互動 HTML 報告…')
+        self.folder_button.configure(state='disabled')
         def work():
             try:
+                # Collection, PNG and SSH are complete here; no writer holds an old path.
+                old_output = outcome.output
+                outcome.output = mark_low_folder(outcome.output, outcome.summary, outcome.config.output)
+                if outcome.output != old_output:
+                    update_run_path(outcome.output)
                 path = save_report(outcome.samples, outcome.summary, outcome.config, outcome.output, unit)
-                events.put(('report', (path, None)))
+                events.put(('report', (path, None, outcome.output)))
             except Exception as exc:
                 error = str(exc)
                 try:
                     (outcome.output / 'html-report-error.txt').write_text(error, encoding='utf-8')
                 except OSError as save_error:
                     error += f'；錯誤紀錄也無法寫入：{save_error}'
-                events.put(('report', (None, error)))
+                events.put(('report', (None, error, outcome.output)))
         self.report_worker = threading.Thread(target=work, daemon=False)
         self.report_worker.start()
 

@@ -43,7 +43,8 @@ class GuiScheduleTests(unittest.TestCase):
     def worker(self, calls, verdict='COMPLETE'):
         def run(config, stop, events, **kwargs):
             if calls:
-                self.assertTrue((calls[-1][0]/'report.html').exists(), 'Next run started before previous report completed')
+                marked = calls[-1][0].with_name(calls[-1][0].name+'_LOW')
+                self.assertTrue((marked/'report.html').exists(), 'Next run started before previous report completed and marked')
             output = config.output / str(len(calls)+1)
             output.mkdir()
             started = time.monotonic()

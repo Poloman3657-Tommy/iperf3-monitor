@@ -132,6 +132,20 @@ Station 結果仍保存到 `mcs-events.jsonl` 以沿用原檔名。每行為一�
 
 狀態包含 `RUNNING`、`OK`、`NO_PEERS`、`ERROR`、`SKIPPED_BUSY`、`CANCELLED`。IP 留白不建立 SSH 紀錄檔，測速 CSV／JSON 的日期仍會保存。SSH 錯誤不改變吞吐量 PASS／LOW；查詢到的 Station 狀態可能晚於 fail。手動測試僅在設定視窗顯示結果。已通過本機模擬 SSH 與真正 Tk 測試，尚未對你的設備實測。
 
+## 低速資料夾標記
+
+每輪測試只要出現暖機後低速事件，結果資料夾就會加上 `_LOW`，例如：
+
+```text
+gui-results/
+  20260922-170028-123456_LOW/                 有低速事件
+  20260922-171028-123456/                     沒有低速事件
+  schedule-20260922-172000-123456/
+    20260922-172001-123456_LOW/               排程中的低速輪次
+```
+
+這項標記依據實際低速事件，不只看最終 PASS／LOW／INTERRUPTED／ERROR。手動停止或總排程到期前曾有低速，也會標記；暖機期間的低速不計入。改名會等測速、PNG 和 Station 查詢結束，保留全部檔案並更新 `run.json` 的 output 路徑，介面開啟結果／HTML 按鈕亦同步更新。若改名或更新路徑失敗，會顯示保存錯誤並保留已有檔案，不覆寫同名目標；排程會停止後續輪次。
+
 ## HTML 結果報告
 
 每次測試完成或按停止後，本次結果資料夾會新增 **`report.html`**。關閉程式時會先停止測速、等 Station 查詢取消／完成，再保存 HTML；報告寫完才能開始下一輪。左側「開啟 HTML 報告」會在存好後啟用，使用系統預設瀏覽器開啟。
@@ -150,10 +164,10 @@ Station 結果仍保存到 `mcs-events.jsonl` 以沿用原檔名。每行為一�
 
 ## 檔案結構
 
-ZIP 與 SHA-256 檔名都包含版本號，例如 `iperf-monitor-windows-x64-v1.7.0.zip` 和 `iperf-monitor-windows-x64-v1.7.0.zip.sha256`。解壓縮的外層資料夾也會包含版本號，內部 EXE 保持原名。
+ZIP 與 SHA-256 檔名都包含版本號，例如 `iperf-monitor-windows-x64-v1.7.1.zip` 和 `iperf-monitor-windows-x64-v1.7.1.zip.sha256`。解壓縮的外層資料夾也會包含版本號，內部 EXE 保持原名。
 
 ```text
-IperfMonitor-v1.7.0/       以 v1.7.0 為例
+IperfMonitor-v1.7.1/       以 v1.7.1 為例
   IperfMonitor.exe        桌面程式
   config.json             預設／已儲存設定
   _internal/              Python、Tk 與繪圖執行環境

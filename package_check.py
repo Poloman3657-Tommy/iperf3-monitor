@@ -108,6 +108,10 @@ def check_package(report_path: str) -> int:
             raise RuntimeError('Desktop raw throughput output is not in Mbits/sec')
         if not outcome.summary['low_samples']:
             raise RuntimeError('UDP throughput was not classified below the test threshold')
+        if not outcome.output.name.endswith('_LOW') or app.output != outcome.output or app.report_file.parent != app.output:
+            raise RuntimeError('Low-event folder label or GUI paths are incorrect')
+        if json.loads((outcome.output / 'run.json').read_text(encoding='utf-8'))['output'] != str(outcome.output):
+            raise RuntimeError('Renamed output path was not saved in run.json')
         if app.dispatcher is not None or (outcome.output / 'mcs-events.jsonl').exists():
             raise RuntimeError('Blank SSH IP unexpectedly started diagnostics')
         if parse_station('Station EA:8C:B6:92:F0:B2 (on wlan2.2)\n signal: -56 dBm\n tx bitrate: 960.7 MBit/s HE-MCS 9\n rx bitrate: 1080.6 MBit/s HE-MCS 10', 'EA:8C:B6:92:F0:B2', 'wlan2.2')['rx_bitrate'] != '1080.6 MBit/s HE-MCS 10':
@@ -162,6 +166,11 @@ def check_package(report_path: str) -> int:
             raise RuntimeError('Expected repeated rounds and normal deadline completion: ' + app.schedule_status.get())
         for index, metadata_path in enumerate(rounds, 1):
             metadata = json.loads(metadata_path.read_text(encoding='utf-8'))
+            round_summary = json.loads((metadata_path.parent / 'summary.json').read_text(encoding='utf-8'))
+            if bool(round_summary['events']) != metadata_path.parent.name.endswith('_LOW'):
+                raise RuntimeError('Scheduled result folder does not match its low events')
+            if metadata['output'] != str(metadata_path.parent):
+                raise RuntimeError('Scheduled run metadata has a stale result path')
             if metadata.get('schedule_round') != index:
                 raise RuntimeError('Missing schedule round metadata')
             for filename in ('report.html', 'samples.csv', 'summary.json', 'throughput.png'):
@@ -173,7 +182,8 @@ def check_package(report_path: str) -> int:
                       output=str(outcome.output), summary=outcome.summary, config_roundtrip=True,
                       chart_time_unit=restored.time_unit, curve_points=len(curve.get_xdata()),
                       navigation_verified=True, blank_ssh_verified=True, html_report_verified=True,
-                      repeat_schedule_verified=True, repeat_rounds=len(rounds), schedule_output=str(schedule_output))
+                      repeat_schedule_verified=True, repeat_rounds=len(rounds), schedule_output=str(schedule_output),
+                      low_folder_verified=True)
         return_code = 0
     except Exception:
         result['error'] = traceback.format_exc()
