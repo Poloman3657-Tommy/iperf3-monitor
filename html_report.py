@@ -35,7 +35,7 @@ def save_report(samples, summary, config, output, time_unit=None):
         raise ValueError('Invalid HTML report time unit')
     # Explicitly select public measurement parameters; never serialize the entire app.
     settings = {key: getattr(config, key) for key in
-                ('server', 'port', 'protocol', 'reverse', 'duration', 'warmup', 'threshold', 'parallel', 'udp_mbps')}
+                ('server', 'port', 'protocol', 'reverse', 'duration', 'repeat_minutes', 'total_minutes', 'warmup', 'threshold', 'parallel', 'udp_mbps')}
     settings['time_unit'] = unit
     settings['ssh_enabled'] = config.ssh.active
     payload = dict(version=1, generated_at=datetime.now().astimezone().isoformat(), config=settings,

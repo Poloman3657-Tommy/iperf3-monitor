@@ -12,10 +12,12 @@ import queue
 import shutil
 import sys
 import threading
+import time
 
 import monitor
 from charting import TIME_UNITS
 from mcs import SshSettings, coerce_settings
+from repeat_schedule import normalize_schedule
 
 
 def app_directory() -> Path:
@@ -37,6 +39,8 @@ class RunConfig:
     server: str = '192.168.137.57'
     port: int = 4477
     duration: int = 60
+    repeat_minutes: float = 5
+    total_minutes: float = 0
     warmup: float = 20
     threshold: float = 100
     parallel: int = 1
@@ -48,6 +52,7 @@ class RunConfig:
     output: Path = field(default_factory=lambda: app_directory() / 'gui-results')
 
     def validated(self, *, check_executable: bool = True) -> RunConfig:
+        repeat_minutes, total_minutes = normalize_schedule(self.duration, self.repeat_minutes, self.total_minutes)
         if self.time_unit not in TIME_UNITS:
             raise ValueError('時間單位必須是 auto、seconds、minutes、hours 或 days。')
         if not all(isinstance(value, str) for value in (self.server, self.iperf, self.protocol)):
@@ -86,6 +91,7 @@ class RunConfig:
         if not executable and check_executable:
             raise ValueError('找不到可執行的 iperf3，請用「瀏覽」選擇本機執行檔。')
         return replace(self, server=server, protocol=protocol, ssh=coerce_settings(self.ssh),
+                       repeat_minutes=repeat_minutes, total_minutes=total_minutes,
                        iperf=str(Path(executable).resolve()) if executable else self.iperf.strip(),
                        output=Path(self.output).expanduser().resolve())
 
@@ -104,9 +110,10 @@ class RunOutcome:
     output: Path | None
     samples: list[dict]
     summary: dict
+    finished_at: float | None = None
 
 
-def run_test(config: RunConfig, stop: threading.Event, events: queue.Queue) -> None:
+def run_test(config: RunConfig, stop: threading.Event, events: queue.Queue, *, stop_at=None, schedule_round=None) -> None:
     """Always publish one finished event, even if opening the output directory fails."""
     output, samples = None, []
     state, error = 'ERROR', None
@@ -117,10 +124,12 @@ def run_test(config: RunConfig, stop: threading.Event, events: queue.Queue) -> N
         output.mkdir(parents=True, exist_ok=False)
         metadata = asdict(config) | {'output': str(output), 'command': config.command(),
                                      'started_at': datetime.now().astimezone().isoformat()}
+        if schedule_round is not None:
+            metadata['schedule_round'] = schedule_round
         (output / 'run.json').write_text(json.dumps(metadata, indent=2), encoding='utf-8')
         events.put(('started', output))
         samples, state, error = monitor.collect(
-            config.command(), config, output, stop_event=stop, quiet=True,
+            config.command(), config, output, stop_event=stop, quiet=True, stop_at=stop_at,
             on_sample=lambda sample: events.put(('sample', sample)),
             on_line=lambda line: events.put(('line', line)),
         )
@@ -136,4 +145,4 @@ def run_test(config: RunConfig, stop: threading.Event, events: queue.Queue) -> N
     finally:
         if summary is None:
             summary = monitor.summarize(samples, state, error or 'Worker ended without a result')
-        events.put(('finished', RunOutcome(config, output, samples, summary)))
+        events.put(('finished', RunOutcome(config, output, samples, summary, time.monotonic())))

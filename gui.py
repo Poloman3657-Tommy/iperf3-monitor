@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
+from datetime import datetime
 import os
 from pathlib import Path
 import platform
@@ -37,6 +39,7 @@ from viewport import TimeViewport, elapsed_label
 from mcs import LowEventGate, McsDispatcher, result_label, format_capture
 from mcs_dialog import SshDialog
 from html_report import save_report
+from repeat_schedule import RepeatSchedule
 import monitor
 
 TIME_LABELS = {'自動': 'auto', '秒': 'seconds', '分': 'minutes', '時': 'hours', '天': 'days'}
@@ -54,6 +57,8 @@ class MonitorApp:
             load_error = f'設定檔載入失敗：{exc}。目前顯示內建預設；原檔未變更。'
             defaults = RunConfig(iperf='')
         self.active = self.closing = self.closed = False
+        self.schedule = self.schedule_config = None
+        self.schedule_status = tk.StringVar(value='總排程設 0：只測一輪。')
         self.worker = None
         self.stop_event = threading.Event()
         self.events = queue.Queue()
@@ -81,6 +86,7 @@ class MonitorApp:
         self.event_caption = tk.StringVar(value='低速事件：0 次；點選事件可放大查看。')
         self.vars = {name: tk.StringVar(value=str(value)) for name, value in {
             'iperf': iperf or defaults.iperf or find_iperf(), 'server': defaults.server, 'port': defaults.port,
+            'repeat_minutes': defaults.repeat_minutes, 'total_minutes': defaults.total_minutes,
             'duration': defaults.duration, 'warmup': defaults.warmup, 'threshold': defaults.threshold,
             'parallel': defaults.parallel, 'protocol': defaults.protocol, 'udp_mbps': defaults.udp_mbps,
             'output': defaults.output,
@@ -91,9 +97,11 @@ class MonitorApp:
         self.path_status = tk.StringVar(value='測試紀錄與圖表會自動保存。')
         self.metrics = {key: tk.StringVar(value='—') for key in ('current', 'minimum', 'average', 'low')}
         self._build()
+        self.vars['duration'].trace_add('write', lambda *_: self._update_repeat_state())
         self.vars['protocol'].trace_add('write', lambda *_: self._update_protocol_state())
         self.vars['time_unit'].trace_add('write', lambda *_: self._draw())
         self._update_protocol_state()
+        self._update_repeat_state()
         if load_error:
             self.status.set(load_error)
             self.status_label.configure(foreground='#c6373e')
@@ -102,8 +110,8 @@ class MonitorApp:
 
     def _build(self):
         self.root.title('iperf3 即時速率監測')
-        self.root.geometry('1160x800')
-        self.root.minsize(980, 680)
+        self.root.geometry('1160x840')
+        self.root.minsize(980, 740)
         style = ttk.Style(self.root)
         if 'clam' in style.theme_names():
             style.theme_use('clam')
@@ -137,6 +145,7 @@ class MonitorApp:
         form.columnconfigure(0, weight=1)
         ttk.Label(form, text=f'執行環境：{platform.system()}（自動偵測）').grid(row=0, column=0, sticky='w', pady=(0, 9))
         rows = [('server', 'Server IP'), ('port', 'Port'), ('duration', '測試秒數（0＝持續）'),
+                ('repeat_minutes', '重測等待（分鐘）'), ('total_minutes', '總排程分鐘（0單次）'),
                 ('warmup', '忽略開始秒數'), ('threshold', '低速門檻（Mbps）'), ('parallel', '平行連線數')]
         for index, (name, label) in enumerate(rows, 1):
             box = ttk.Frame(form)
@@ -145,8 +154,12 @@ class MonitorApp:
             entry = ttk.Entry(box, textvariable=self.vars[name], width=17)
             entry.pack(side='right', fill='x', expand=True)
             self.controls.append((entry, 'normal'))
+            if name == 'repeat_minutes':
+                self.repeat_entry = entry
+            elif name == 'total_minutes':
+                self.total_entry = entry
         modes = ttk.Frame(form)
-        modes.grid(row=7, column=0, sticky='ew', pady=(10, 3))
+        modes.grid(row=9, column=0, sticky='ew', pady=(10, 3))
         ttk.Label(modes, text='協定').grid(row=0, column=0, sticky='w')
         ttk.Label(modes, text='傳輸方向').grid(row=0, column=1, sticky='w', padx=(10, 0))
         protocol = ttk.Combobox(modes, textvariable=self.vars['protocol'], state='readonly', width=7, values=['TCP', 'UDP'])
@@ -157,18 +170,20 @@ class MonitorApp:
         direction.grid(row=1, column=1, sticky='ew', padx=(10, 0))
         self.controls.append((direction, 'readonly'))
         udp_box = ttk.Frame(form)
-        udp_box.grid(row=8, column=0, sticky='ew', pady=(5, 0))
+        udp_box.grid(row=10, column=0, sticky='ew', pady=(5, 0))
         ttk.Label(udp_box, text='UDP Mbps／每條', width=19).pack(side='left')
         self.udp_entry = ttk.Entry(udp_box, textvariable=self.vars['udp_mbps'], width=17)
         self.udp_entry.pack(side='right', fill='x', expand=True)
         self.controls.append((self.udp_entry, 'normal'))
-        for row, name, label, callback in [(9, 'iperf', 'iperf3 執行檔', self._pick_iperf),
-                                           (12, 'output', '結果資料夾', self._pick_output)]:
+        for row, name, label, callback in [(11, 'iperf', 'iperf3 執行檔', self._pick_iperf),
+                                           (13, 'output', '結果資料夾', self._pick_output)]:
             ttk.Label(form, text=label).grid(row=row, column=0, sticky='w', pady=(14, 3))
-            entry = ttk.Entry(form, textvariable=self.vars[name], width=36)
-            entry.grid(row=row + 1, column=0, sticky='ew')
-            button = ttk.Button(form, text='瀏覽…', command=callback)
-            button.grid(row=row + 2, column=0, sticky='e', pady=(4, 0))
+            path_box = ttk.Frame(form)
+            path_box.grid(row=row + 1, column=0, sticky='ew')
+            entry = ttk.Entry(path_box, textvariable=self.vars[name], width=27)
+            entry.pack(side='left', fill='x', expand=True)
+            button = ttk.Button(path_box, text='瀏覽…', command=callback)
+            button.pack(side='right', padx=(4, 0))
             self.controls.extend([(entry, 'normal'), (button, 'normal')])
         ttk.Label(form, text='秒數設 0：持續測試，按停止才結束。\n每秒更新，開始前 20 秒預設不報警。\n低於門檻標紅；停止後保存已收到資料。',
                   wraplength=300).grid(row=15, column=0, sticky='w', pady=(18, 0))
@@ -256,6 +271,7 @@ class MonitorApp:
         self.progress.pack(fill='x', pady=(12, 5))
         self.status_label = ttk.Label(outer, textvariable=self.status, wraplength=1050)
         self.status_label.pack(fill='x')
+        ttk.Label(outer, textvariable=self.schedule_status, wraplength=1050).pack(fill='x', pady=(3, 0))
         ttk.Label(outer, textvariable=self.path_status, wraplength=1050).pack(fill='x', pady=(3, 0))
         ttk.Label(outer, textvariable=self.report_status, wraplength=1050).pack(fill='x', pady=(3, 0))
         self._draw()
@@ -277,6 +293,8 @@ class MonitorApp:
             return RunConfig(
                 iperf=self.vars['iperf'].get(), server=self.vars['server'].get(),
                 port=int(self.vars['port'].get()), duration=int(self.vars['duration'].get()),
+                repeat_minutes=float(self.vars['repeat_minutes'].get()) if int(self.vars['duration'].get()) != 0 else 0,
+                total_minutes=float(self.vars['total_minutes'].get()) if int(self.vars['duration'].get()) != 0 else 0,
                 warmup=float(self.vars['warmup'].get()), threshold=float(self.vars['threshold'].get()),
                 parallel=int(self.vars['parallel'].get()), reverse=self.vars['direction'].get().startswith('下載'),
                 protocol=self.vars['protocol'].get(), udp_mbps=float(self.vars['udp_mbps'].get()),
@@ -287,7 +305,7 @@ class MonitorApp:
             raise ValueError(f'設定錯誤：{exc}') from exc
 
     def save_settings(self):
-        if self.active:
+        if self.active or self.schedule is not None:
             return
         try:
             save_config(self.read_config(check_executable=False), self.settings_path)
@@ -298,21 +316,31 @@ class MonitorApp:
             self.status_label.configure(foreground='#c6373e')
 
     def _update_protocol_state(self):
-        self.udp_entry.configure(state='normal' if not self.active and self.vars['protocol'].get() == 'UDP' else 'disabled')
+        self.udp_entry.configure(state='normal' if not self.active and self.schedule is None and self.vars['protocol'].get() == 'UDP' else 'disabled')
+
+    def _update_repeat_state(self):
+        try:
+            enabled = int(self.vars['duration'].get()) > 0 and not self.active and self.schedule is None
+        except ValueError:
+            enabled = False
+        for entry in (self.repeat_entry, self.total_entry):
+            entry.configure(state='normal' if enabled else 'disabled')
 
     def _selected_time_unit(self):
         value = self.vars['time_unit'].get()
         return TIME_LABELS.get(value, value)
 
     def _set_running(self, running):
+        running = running or self.schedule is not None
         for widget, original in self.controls:
             widget.configure(state='disabled' if running else original)
         self.start_button.configure(state='disabled' if running else 'normal')
         self.stop_button.configure(state='normal' if running else 'disabled')
         self._update_protocol_state()
+        self._update_repeat_state()
 
     def edit_ssh(self):
-        if self.active or (self.dispatcher and self.dispatcher.busy):
+        if self.active or self.schedule is not None or (self.dispatcher and self.dispatcher.busy):
             return
         if self.ssh_dialog and not self.ssh_dialog.closed:
             self.ssh_dialog.window.lift()
@@ -343,7 +371,7 @@ class MonitorApp:
             self._show_mcs(result)
 
     def start(self):
-        if self.active or self.closing or self.report_pending or self.report_worker is not None or (self.dispatcher and self.dispatcher.busy):
+        if self.active or self.schedule is not None or self.closing or self.report_pending or self.report_worker is not None or (self.dispatcher and self.dispatcher.busy):
             return
         try:
             config = self.read_config()
@@ -353,6 +381,28 @@ class MonitorApp:
             self.status.set(str(exc))
             self.status_label.configure(foreground='#c6373e')
             return
+        if config.total_minutes > 0:
+            try:
+                folder = config.output / ('schedule-' + datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
+                folder.mkdir(parents=True, exist_ok=False)
+            except OSError as exc:
+                self.status.set(f'無法建立排程資料夾：{exc}')
+                self.status_label.configure(foreground='#c6373e')
+                return
+            self.schedule = RepeatSchedule(config.repeat_minutes, config.total_minutes, time.monotonic())
+            self.schedule_config = replace(config, output=folder)
+            config = self.schedule_config
+        else:
+            self.schedule_status.set('持續測試：排程欄位停用。' if config.duration == 0 else '單次測試：總排程分鐘為 0。')
+        self._launch_round(config)
+
+    def _launch_round(self, config):
+        if self.schedule is not None:
+            now = time.monotonic()
+            if self.schedule.expired(now):
+                self._end_schedule('已達總時間')
+                return
+            self.schedule.begin_round(now)
         self.config, self.samples, self.output, self.last_outcome = config, [], None, None
         self.report_file = None
         self.report_button.configure(state='disabled')
@@ -386,16 +436,46 @@ class MonitorApp:
         self.status_label.configure(foreground='#182a3c')
         self.path_status.set('建立本次測試資料夾…')
         self._draw()
-        self.worker = threading.Thread(target=run_test, args=(config, self.stop_event, self.events), daemon=False)
+        options = dict(stop_at=self.schedule.deadline, schedule_round=self.schedule.round_number) if self.schedule else {}
+        self.worker = threading.Thread(target=run_test, args=(config, self.stop_event, self.events), kwargs=options, daemon=False)
         self.worker.start()
 
     def stop(self):
+        self._end_schedule('已手動停止排程')
         if self.dispatcher:
             self.dispatcher.close()
         if self.active:
             self.stop_event.set()
             self.stop_button.configure(state='disabled')
             self.status.set('停止中，正在保存已取得的資料…')
+
+    def _end_schedule(self, reason):
+        if self.schedule is not None:
+            self.schedule_status.set(f'{reason}；共啟動 {self.schedule.round_number} 輪。')
+            self.schedule = self.schedule_config = None
+            self._set_running(self.active)
+
+    def _advance_schedule(self):
+        schedule = self.schedule
+        if schedule is None:
+            return
+        now = time.monotonic()
+        if schedule.expired(now):
+            if self.dispatcher:
+                self.dispatcher.close()
+            if not self.active:
+                self._end_schedule('已達總時間')
+            else:
+                self.schedule_status.set('已達總時間，正在停止本輪並保存資料…')
+            return
+        busy = self.report_pending or self.report_worker is not None or (self.dispatcher and self.dispatcher.busy)
+        if not self.active and not busy and schedule.ready(now):
+            self._launch_round(self.schedule_config)
+            if self.schedule is None:
+                return
+        remaining = max(0, schedule.deadline-now)
+        stage = '測速中' if self.active else '保存報告中' if busy else f'下輪倒數 {max(0, schedule.next_due-now):.0f} 秒'
+        self.schedule_status.set(f'第 {schedule.round_number} 輪｜{stage}｜總排程剩餘 {remaining/60:.2f} 分鐘')
 
     def _append_log(self, text):
         self.log.configure(state='normal')
@@ -438,6 +518,8 @@ class MonitorApp:
                 self.report_file, error = value
                 self.report_status.set(f'HTML 儲存失敗：{error}' if error else f'HTML 已保存：{self.report_file}')
                 self.report_button.configure(state='normal' if self.report_file else 'disabled')
+                if error:
+                    self._end_schedule('HTML 存檔錯誤，已停止排程')
             elif kind == 'finished':
                 self._finish(value)
                 changed = False
@@ -454,9 +536,11 @@ class MonitorApp:
                 self.status.set(f'等待 iperf3 輸出… {time.monotonic() - self.started_at:.0f} 秒')
         if not self.active:
             self._start_report()
+        self._advance_schedule()
+        if not self.active:
             pending = (self.dispatcher is not None and self.dispatcher.busy) or self.report_pending or self.report_worker is not None
-            self.start_button.configure(state='disabled' if pending else 'normal')
-            self.ssh_button.configure(state='disabled' if pending else 'normal')
+            self.start_button.configure(state='disabled' if pending or self.schedule else 'normal')
+            self.ssh_button.configure(state='disabled' if pending or self.schedule else 'normal')
             if self.closing and not pending:
                 self._destroy()
                 return
@@ -582,6 +666,8 @@ class MonitorApp:
 
     def _finish(self, outcome: RunOutcome):
         self.active = False
+        if self.schedule:
+            self.schedule.finish_round(outcome.finished_at if outcome.finished_at is not None else time.monotonic())
         self.progress.stop()
         if outcome.config.duration == 0:
             self.progress.configure(value=0)
@@ -599,6 +685,9 @@ class MonitorApp:
                     outcome.summary['error'] += f'；摘要儲存失敗：{save_error}'
             self.folder_button.configure(state='normal')
         self.last_outcome = outcome
+        if self.schedule and outcome.summary['verdict'] not in ('PASS', 'LOW'):
+            reason = '已達總時間' if self.schedule.expired(time.monotonic()) else '測試錯誤或中斷，已停止排程'
+            self._end_schedule(reason)
         self.report_pending = self.output is not None and self.output.is_dir()
         self.report_time_unit = self._selected_time_unit()
         if self.report_pending:
@@ -663,6 +752,7 @@ class MonitorApp:
     def close(self):
         if self.closed:
             return
+        self._end_schedule('關閉視窗，已停止排程')
         if self.active:
             self.closing = True
             self.stop()

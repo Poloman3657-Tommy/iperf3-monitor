@@ -59,6 +59,7 @@
     $('unit').value=cfg.time_unit;
     $('verdict').textContent=summary.verdict; $('verdict').dataset.state=summary.verdict;
     $('subtitle').textContent=`${cfg.protocol} · ${cfg.reverse?'下載 server → 本機':'上傳 本機 → server'} · ${cfg.server}:${cfg.port} · 忽略前 ${cfg.warmup} 秒 · 門檻 ${cfg.threshold} Mbps`;
+    if(cfg.total_minutes>0) $('subtitle').textContent+=` · 單輪 ${cfg.duration} 秒 / 測完等待 ${cfg.repeat_minutes} 分 / 總排程 ${cfg.total_minutes} 分（本報告為其中一輪）`;
     $('minimum').textContent=number(summary.min_mbps); $('average').textContent=number(summary.average_mbps);
     $('low-seconds').textContent=number(summary.low_seconds); $('event-count').textContent=number(events.length);
     if(summary.error) { $('error').hidden=false; $('error').textContent=summary.error; }

@@ -3,6 +3,8 @@
   "server": "192.168.137.57",
   "port": 4477,
   "duration": 60,
+  "repeat_minutes": 5,
+  "total_minutes": 0,
   "warmup": 20,
   "threshold": 100,
   "parallel": 1,

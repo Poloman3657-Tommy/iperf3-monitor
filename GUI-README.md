@@ -2,7 +2,7 @@
 
 **Windows 不想安裝相依套件：** 到 [最新 Release](https://github.com/Poloman3657-Tommy/iperf3-monitor/releases/latest) 下載帶版本號的 Windows x64 免安裝 ZIP，完整解壓縮後進入對應版本資料夾，開啟 `IperfMonitor.exe`。包內已含 Python、Tk、Matplotlib 與 iperf3；不需 pip。詳細步驟見 [Windows 說明](Windows-README.md)。以下是 Python 原始碼版的使用與開發方式。
 
-Windows 打包時必須指定版本，例如 `python zip_windows_bundle.py --version v1.6.0`。輸出 ZIP、SHA-256 和外層資料夾會使用相同版本號；若同版本檔案已存在，工具會拒絕覆寫。
+Windows 打包時必須指定版本，例如 `python zip_windows_bundle.py --version v1.7.0`。輸出 ZIP、SHA-256 和外層資料夾會使用相同版本號；若同版本檔案已存在，工具會拒絕覆寫。
 
 按「開始測速」會**直接啟動本機 iperf3**，每秒更新速率曲線及低速事件；不需要 HTML、下載測試腳本或手動匯入 log。
 
@@ -24,7 +24,7 @@ E:\Herdr\Workspace\iperf-monitor\run-gui.cmd --iperf D:\iperf3.16_64\iperf3.exe
 
 預設 `192.168.137.57:4477`、上傳、60 秒、忽略前 20 秒、門檻 100 Mbps、單條 TCP 連線。開始後表單鎖定，避免測試中的方向或門檻被改標；結束後可修改再測。
 
-**持續測試：將「測試秒數」填為 `0`。** 程式使用 iperf3 `-t 0`，不設總時長上限、不定期重連，直到按「停止」、關閉視窗，或遇到測試錯誤。進度條顯示持續活動，不顯示完成百分比。暖機只忽略開始的一次 20 秒（可修改），之後持續判定低速；停止後保存已取得的紀錄及圖表。非零秒數仍依原本指定時間測試。
+**持續測試：將「測試秒數」填為 `0`。** 程式使用 iperf3 `-t 0`，不設總時長上限、不定期重連，直到按「停止」、關閉視窗，或遇到測試錯誤。進度條顯示持續活動，不顯示完成百分比。暖機只忽略開始的一次 20 秒（可修改），之後持續判定低速；停止後保存已取得的紀錄及圖表。非零秒數代表每輪時間；可再設定重測等待與總排程分鐘，總時間到期時保存最後一輪的部分資料，操作見 Windows 說明的「重複測試」。
 
 ## 保存設定與 UDP
 
@@ -107,6 +107,7 @@ macOS 請使用含可用 Tkinter 的 Python；可先用 `python3 -m tkinter` 檢
 
 - `gui.py`：Tk 表單、即時曲線、事件佇列及主視窗生命週期。
 - `gui_runner.py`：不可變設定、路徑驗證、背景測速；不呼叫 Tk。
+- `repeat_schedule.py`：以 monotonic 時鐘計算測完後等待、輪次與固定總截止時間。總排程 0 保留單次模式；duration 0 正規化排程欄位為 0。
 - `html_report.py`：以明確參數欄位及完整取樣建立單一 HTML，嵌入前跳脫遠端文字，採原子替換保存。讀取 Station JSONL 的最後一筆狀態，損毀內容不默默忽略。
 - `report_assets/`：離線 HTML／CSS／Canvas，純 JavaScript 時間單位、縮放、平移、捲軸、事件定位。無第三方或 CDN 相依；Windows 打包時需一併帶入三個執行資源。
 - `mcs.py`：SSH 設定與命令白名單、主機金鑰驗證、可取消的 iw Station 擷取與欄位顯示、每事件觸發與 JSONL。只有有效 IP 且啟用才建立連線；密碼不屬於 `RunConfig`，不會進入 `asdict`／設定或 `run.json`。
@@ -122,6 +123,7 @@ macOS 請使用含可用 Tkinter 的 Python；可先用 `python3 -m tkinter` 檢
 ..\.venv\Scripts\python.exe -m unittest -v test_viewport test_charting test_config_store test_gui_runner test_monitor
 ..\.venv\Scripts\python.exe -m unittest -v test_mcs test_mcs_transport test_station test_fail_dates test_zip_bundle
 ..\.venv\Scripts\python.exe -m unittest -v test_html_report
+..\.venv\Scripts\python.exe -m unittest -v test_repeat_schedule test_gui_schedule
 node report_assets/test_report.cjs
 ..\.venv\Scripts\python.exe -m unittest -v test_gui_mcs
 ..\.venv\Scripts\python.exe validate_navigation.py
@@ -143,3 +145,5 @@ Fail 日期由 `monitor.collect` 的 stdout 讀取執行緒在收到每行時建
 HTML 匯出在 GUI 收到 finished 之後，等 Station worker 結束才啟動背景存檔。下一輪與關閉視窗皆等待 report 事件；Tk 測試涵蓋晚到 SSH 結果、失敗提示及關閉等待。`test_html_report` 驗證完整資料、注入文字跳脫與原子寫入失敗，Node 測試驗證四天選點極值及導航邊界。
 
 瀏覽器驗證可執行 `python report_assets/create_fixture.py` 建立人工資料，再以 `python -m http.server 8767 --bind 127.0.0.1 --directory validation/html-report` 提供測試頁。使用 Playwright CLI 開啟 `http://127.0.0.1:8767/report.html` 並取得 snapshot，接著 `run-code --filename report_assets/test_browser.js`；此檢查會將瀏覽器切為離線，測試時間單位、鍵盤焦點、滾輪、拖移、水平捲軸、173 次事件分頁定位與資料完整性。完成後關閉專用瀏覽器工作階段與本機測試伺服器。
+
+重測時 GUI 使用不可變的同一組參數，每輪建立新輸出／佇列／SSH dispatcher。下一輪需等待測完間隔和 HTML／SSH 收尾均完成；`monitor.collect(stop_at=...)` 在 worker 獨立執行總時間截止，不依賴 Tk 重畫是否及時。到期會 kill 自己的子程序、排空已收到輸出，保留 `INTERRUPTED` 與排程截止原因。單元測試涵蓋沉默子程序截止、禁止到期後啟動、設定相容；Tk 測試涵蓋重跑／保存順序、等待期間停止、錯誤終止與 0 秒欄位停用。

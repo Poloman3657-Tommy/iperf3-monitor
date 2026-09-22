@@ -44,6 +44,8 @@
   "server": "192.168.137.57",
   "port": 4477,
   "duration": 60,
+  "repeat_minutes": 5,
+  "total_minutes": 0,
   "warmup": 20,
   "threshold": 100,
   "parallel": 1,
@@ -73,6 +75,25 @@
 UDP 仍以吞吐量判斷 PASS／LOW；丟包與 jitter 保留在 `iperf.log`，不作為這版的額外通過條件。若目標發送速率低於門檻，出現 LOW 是預期結果。
 
 本次已驗證 Windows client 對 NUC Linux server 的雙條 UDP 下載。包內 Cygwin iperf3 3.16 若作為 **Windows server**，多條 UDP 連線可能失敗；該情境請用單條連線或 Linux server。程式會保留原始錯誤，不會偷偷改成 TCP。
+
+## 重複測試
+
+「測試秒數」是每輪執行的秒數。大於 0 時，可設定「重測等待（分鐘）」及「總排程分鐘（0單次）」；秒數為 **0** 時，這兩欄停用，設定檔中的排程值也會忽略，直接持續測試到手動停止。
+
+| 設定 | 意義 |
+|---|---|
+| 測試秒數 60、重測等待 5、總排程 30 | 每輪測 60 秒，測完後等 5 分鐘再開始，總共運行 30 分鐘 |
+| 測試秒數 60、總排程 0 | 只測一輪，重測等待不生效 |
+| 測試秒數 60、重測等待 0、總排程 30 | 上一輪及其報告完成後立即重測，總共運行 30 分鐘 |
+| 測試秒數 0 | 持續測試，重測等待與總排程不可設定 |
+
+總排程從按開始啟動排程後計算，包含連線、每輪測試、等待與保存結果。最後一輪若超過總截止時間會中止，保留收到的取樣，報告標示 `INTERRUPTED` 與 `Schedule time limit reached`。最後的 SSH／報告收尾可能超過截止時間，但不會啟動下一輪。非零總時間小於單輪秒數時，同樣會在總時間到期中止。
+
+等待從上一輪 worker 完成測速及基本紀錄保存時起算，PNG／SSH／HTML 保存與等待並行；若到下一輪預定時間仍未完成，會等完成後再開始。每輪重新暖機，時間軸從 0 起算，原始日期時間則保留本機時區。介面顯示輪次、下輪倒數、總排程剩餘時間；等待中可查看剛完成的圖表和報告，測試參數保持鎖定。
+
+按「停止」或關閉視窗會取消後續排程；LOW 會繼續重測，測速 ERROR／中斷或報告存檔錯誤會結束排程。SSH 診斷錯誤仍只影響診斷資料。重測等待／總排程支援小數分鐘；可透過「儲存設定」保留，對應 `repeat_minutes`／`total_minutes`。舊版設定缺少新欄位時，預設等待 5 分鐘、總排程 0，因此仍只測一輪。
+
+結果集中在 `gui-results/schedule-YYYYMMDD-HHMMSS-微秒/`，每輪有獨立時間戳子資料夾，包含 `report.html`、CSV、PNG、JSON 及啟用時的 Station 紀錄。`run.json` 的 `schedule_round` 標示第幾輪，HTML 顯示單輪秒數／重測等待／總排程參數；每份報告只代表該輪，並非多輪合併統計。
 
 ## SSH / Station 設定
 
@@ -129,10 +150,10 @@ Station 結果仍保存到 `mcs-events.jsonl` 以沿用原檔名。每行為一�
 
 ## 檔案結構
 
-ZIP 與 SHA-256 檔名都包含版本號，例如 `iperf-monitor-windows-x64-v1.6.0.zip` 和 `iperf-monitor-windows-x64-v1.6.0.zip.sha256`。解壓縮的外層資料夾也會包含版本號，內部 EXE 保持原名。
+ZIP 與 SHA-256 檔名都包含版本號，例如 `iperf-monitor-windows-x64-v1.7.0.zip` 和 `iperf-monitor-windows-x64-v1.7.0.zip.sha256`。解壓縮的外層資料夾也會包含版本號，內部 EXE 保持原名。
 
 ```text
-IperfMonitor-v1.6.0/       以 v1.6.0 為例
+IperfMonitor-v1.7.0/       以 v1.7.0 為例
   IperfMonitor.exe        桌面程式
   config.json             預設／已儲存設定
   _internal/              Python、Tk 與繪圖執行環境
@@ -155,4 +176,4 @@ Server 端仍需執行 iperf3 server，例如 `iperf3 -s -p 4477`。免安裝包
 IperfMonitor.exe --check-package package-check.json
 ```
 
-這個診斷只在 `127.0.0.1` 執行約 4 秒的單條 UDP 回環下載，使用真正 Tk 事件循環，檢查持續測試、停止、PNG 輸出及設定儲存／重讀；不連到外部 server。結果寫入指定 JSON、旁邊的 `run-data` 與 `package-test-config.json`，不修改 EXE 旁的使用者設定。
+這個診斷只連 `127.0.0.1`：先執行約 4 秒的單條 UDP 持續下載，再執行約 7.2 秒的重測排程，使用真正 Tk 事件循環，檢查等待／重跑／到期、每輪 HTML／CSV／PNG、持續模式欄位停用、設定儲存與重讀。不連到外部 server。結果寫入指定 JSON、旁邊的 `run-data` 與 `package-test-config.json`，不修改 EXE 旁的使用者設定。

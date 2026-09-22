@@ -132,10 +132,48 @@ def check_package(report_path: str) -> int:
         if (restored.protocol != 'UDP' or restored.udp_mbps != 25 or restored.parallel != 1 or
                 not restored.reverse or restored.time_unit != 'minutes'):
             raise RuntimeError('Saved settings did not round-trip correctly')
+        if not app.repeat_entry.instate(['disabled']) or not app.total_entry.instate(['disabled']):
+            raise RuntimeError('Continuous mode did not disable schedule controls')
+        # A persistent local server must accept separate, non-overlapping test connections.
+        # Cygwin's one-off UDP server can stay alive after its continuous client is killed.
+        if server.poll() is None:
+            server.kill()
+        server.wait(timeout=5)
+        server = subprocess.Popen([executable, '-s', '-B', '127.0.0.1', '-p', str(port)],
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                  creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        time.sleep(.5)
+        if server.poll() is not None:
+            raise RuntimeError('Persistent loopback server could not start')
+        for key, value in dict(duration='2', warmup='0', repeat_minutes='.01', total_minutes='.12').items():
+            app.vars[key].set(value)
+        app.start_button.invoke()
+        if app.schedule is None:
+            raise RuntimeError('Repeat schedule did not start: ' + app.status.get())
+        schedule_output = app.schedule_config.output
+        deadline = time.monotonic() + 20
+        while (app.schedule is not None or app.active or app.report_pending or app.report_worker is not None) and time.monotonic() < deadline:
+            root.update()
+            time.sleep(.01)
+        if app.schedule is not None or app.active or app.report_pending or app.report_worker is not None:
+            raise TimeoutError('Repeat schedule did not stop/save at its total deadline')
+        rounds = sorted(schedule_output.glob('*/run.json'))
+        if len(rounds) < 2 or '總時間' not in app.schedule_status.get():
+            raise RuntimeError('Expected repeated rounds and normal deadline completion: ' + app.schedule_status.get())
+        for index, metadata_path in enumerate(rounds, 1):
+            metadata = json.loads(metadata_path.read_text(encoding='utf-8'))
+            if metadata.get('schedule_round') != index:
+                raise RuntimeError('Missing schedule round metadata')
+            for filename in ('report.html', 'samples.csv', 'summary.json', 'throughput.png'):
+                if not (metadata_path.parent / filename).is_file():
+                    raise RuntimeError(f'Missing round artifact: {filename}')
+        if errors:
+            raise RuntimeError('; '.join(errors))
         result.update(passed=True, samples=len(outcome.samples), ui_event_pumps=pumps,
                       output=str(outcome.output), summary=outcome.summary, config_roundtrip=True,
                       chart_time_unit=restored.time_unit, curve_points=len(curve.get_xdata()),
-                      navigation_verified=True, blank_ssh_verified=True, html_report_verified=True)
+                      navigation_verified=True, blank_ssh_verified=True, html_report_verified=True,
+                      repeat_schedule_verified=True, repeat_rounds=len(rounds), schedule_output=str(schedule_output))
         return_code = 0
     except Exception:
         result['error'] = traceback.format_exc()
@@ -149,6 +187,9 @@ def check_package(report_path: str) -> int:
                 time.sleep(0.02)
             if not app.active:
                 app.close()
+                while not app.closed and time.monotonic() < deadline:
+                    root.update()
+                    time.sleep(.02)
         elif root is not None:
             root.destroy()
         if server is not None:

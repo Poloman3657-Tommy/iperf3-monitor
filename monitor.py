@@ -118,7 +118,7 @@ def save_summary(samples: list[dict], state: str, error: str | None, output: Pat
 
 def collect(command: list[str], args: argparse.Namespace, output: Path, *,
             stop_event: threading.Event | None = None, on_sample=None, on_line=None,
-            quiet: bool = False) -> tuple[list[dict], str, str | None]:
+            quiet: bool = False, stop_at: float | None = None) -> tuple[list[dict], str, str | None]:
     """Drain output on a thread so a silent or hung iperf cannot block the deadline."""
     samples, state, error = [], 'COMPLETE', None
     messages: queue.Queue = queue.Queue()
@@ -126,6 +126,7 @@ def collect(command: list[str], args: argparse.Namespace, output: Path, *,
     reader = None
     completed = False
     cancelled = False
+    cancel_reason = None
     # iperf3 -t 0 disables its test timer; do not impose our finite-run watchdog.
     deadline = None if args.duration == 0 else time.monotonic() + args.duration + 20
     with (output / 'iperf.log').open('w', encoding='utf-8') as log, \
@@ -135,6 +136,8 @@ def collect(command: list[str], args: argparse.Namespace, output: Path, *,
         try:
             if stop_event is not None and stop_event.is_set():
                 raise InterruptedError('Stopped by user; report contains partial data')
+            if stop_at is not None and time.monotonic() >= stop_at:
+                raise InterruptedError('Schedule time limit reached; report contains partial data')
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                        text=True, encoding='utf-8', errors='replace',
                                        env={**os.environ, 'LC_ALL': 'C'},
@@ -152,9 +155,12 @@ def collect(command: list[str], args: argparse.Namespace, output: Path, *,
             reader = threading.Thread(target=read_output, daemon=True)
             reader.start()
             while True:
-                if stop_event is not None and stop_event.is_set() and not cancelled:
+                stopped = stop_event is not None and stop_event.is_set()
+                expired = stop_at is not None and time.monotonic() >= stop_at
+                if (stopped or expired) and not cancelled:
                     cancelled = True
-                    state, error = 'INTERRUPTED', 'Stopped by user; report contains partial data'
+                    cancel_reason = ('Stopped by user' if stopped else 'Schedule time limit reached') + '; report contains partial data'
+                    state, error = 'INTERRUPTED', cancel_reason
                     # Stop traffic first, then persist every line already in the pipe/queue.
                     if process.poll() is None:
                         process.kill()
@@ -193,15 +199,15 @@ def collect(command: list[str], args: argparse.Namespace, output: Path, *,
                               f"{sample['mbps']:12.3f} Mbps", flush=True)
             code = process.wait(timeout=5)
             if cancelled:
-                state = 'INTERRUPTED'
+                state, error = 'INTERRUPTED', cancel_reason
             elif code != 0 or error:
                 state, error = 'ERROR', error or f'iperf3 exited with code {code}'
             elif args.duration == 0:
                 state, error = 'ERROR', 'Continuous test ended unexpectedly without a stop request'
             elif not completed or not samples or samples[0]['start'] > 0.011 or samples[-1]['end'] < args.duration - 0.1:
                 state, error = 'ERROR', 'Incomplete test or missing interval data; see iperf.log'
-        except (KeyboardInterrupt, InterruptedError):
-            state, error = 'INTERRUPTED', 'Stopped by user; report contains partial data'
+        except (KeyboardInterrupt, InterruptedError) as exc:
+            state, error = 'INTERRUPTED', str(exc) or 'Stopped by user; report contains partial data'
         except (OSError, ValueError, TimeoutError, subprocess.TimeoutExpired) as exc:
             state, error = 'ERROR', str(exc)
         finally:
