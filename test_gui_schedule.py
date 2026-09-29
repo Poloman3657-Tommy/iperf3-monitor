@@ -45,8 +45,9 @@ class GuiScheduleTests(unittest.TestCase):
             if calls:
                 marked = calls[-1][0].with_name(calls[-1][0].name+'_LOW')
                 self.assertTrue((marked/'report.html').exists(), 'Next run started before previous report completed and marked')
-            output = config.output / str(len(calls)+1)
+            output = config.output / f'{time.time_ns()}-{len(calls)+1}'
             output.mkdir()
+            (output/'throughput.png').write_bytes(b'PNG fixture for lifecycle tests')
             started = time.monotonic()
             sample = dict(start=0,end=1,mbps=10,status='LOW')
             finished = time.monotonic()
@@ -82,6 +83,23 @@ class GuiScheduleTests(unittest.TestCase):
             self.assertEqual(len({call[0].parent for call in calls}),1)
             self.assertIn('總時間',self.app.schedule_status.get())
             self.assertTrue(self.app.start_button.instate(['!disabled']))
+            archive=Path(self.temp.name)/'throughput-images'
+            self.assertEqual(len(list(archive.glob('*.png'))),len(calls))
+            for call in calls:
+                self.assertEqual((archive/(call[0].name+'_LOW.png')).read_bytes(),b'PNG fixture for lifecycle tests')
+
+    def test_collection_error_preserves_html_and_stops_future_rounds(self):
+        self.settings(repeat='0',total='1')
+        calls=[]
+        with patch('gui.run_test',side_effect=self.worker(calls)), patch('monitor.draw_plot'), patch('gui.collect_image',side_effect=OSError('archive disk full')):
+            self.app.start()
+            self.pump(lambda:self.app.report_file is not None)
+            self.assertIsNone(self.app.schedule)
+            self.assertEqual(len(calls),1)
+            self.assertTrue(self.app.report_file.is_file())
+            self.assertTrue((self.app.output/'throughput.png').exists())
+            self.assertIn('archive disk full',self.app.report_status.get())
+            self.assertTrue((self.app.output/'image-collection-error.txt').exists())
 
     def test_stop_during_wait_and_measurement_error_cancel_future_rounds(self):
         self.settings(repeat='5',total='30')

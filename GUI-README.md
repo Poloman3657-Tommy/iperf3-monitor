@@ -2,7 +2,7 @@
 
 **Windows 不想安裝相依套件：** 到 [最新 Release](https://github.com/Poloman3657-Tommy/iperf3-monitor/releases/latest) 下載帶版本號的 Windows x64 免安裝 ZIP，完整解壓縮後進入對應版本資料夾，開啟 `IperfMonitor.exe`。包內已含 Python、Tk、Matplotlib 與 iperf3；不需 pip。詳細步驟見 [Windows 說明](Windows-README.md)。以下是 Python 原始碼版的使用與開發方式。
 
-Windows 打包時必須指定版本，例如 `python zip_windows_bundle.py --version v1.7.1`。輸出 ZIP、SHA-256 和外層資料夾會使用相同版本號；若同版本檔案已存在，工具會拒絕覆寫。
+Windows 打包時必須指定版本，例如 `python zip_windows_bundle.py --version v1.7.2`。輸出 ZIP、SHA-256 和外層資料夾會使用相同版本號；若同版本檔案已存在，工具會拒絕覆寫。
 
 按「開始測速」會**直接啟動本機 iperf3**，每秒更新速率曲線及低速事件；不需要 HTML、下載測試腳本或手動匯入 log。
 
@@ -109,6 +109,7 @@ macOS 請使用含可用 Tkinter 的 Python；可先用 `python3 -m tkinter` 檢
 - `gui_runner.py`：不可變設定、路徑驗證、背景測速；不呼叫 Tk。
 - `repeat_schedule.py`：以 monotonic 時鐘計算測完後等待、輪次與固定總截止時間。總排程 0 保留單次模式；duration 0 正規化排程欄位為 0。
 - `result_folders.py`：所有寫入者完成後，依實際低速事件為每輪資料夾加上 `_LOW`，檢查來源／目的父目錄及名稱衝突，原子更新 `run.json` 路徑。
+- `image_collection.py`：將最終資料夾中的 PNG 複製至使用者結果根目錄的 `throughput-images`，保留原檔、拒絕同名覆寫及目錄連結，複製失敗清除本次未完成的副本。
 - `html_report.py`：以明確參數欄位及完整取樣建立單一 HTML，嵌入前跳脫遠端文字，採原子替換保存。讀取 Station JSONL 的最後一筆狀態，損毀內容不默默忽略。
 - `report_assets/`：離線 HTML／CSS／Canvas，純 JavaScript 時間單位、縮放、平移、捲軸、事件定位。無第三方或 CDN 相依；Windows 打包時需一併帶入三個執行資源。
 - `mcs.py`：SSH 設定與命令白名單、主機金鑰驗證、可取消的 iw Station 擷取與欄位顯示、每事件觸發與 JSONL。只有有效 IP 且啟用才建立連線；密碼不屬於 `RunConfig`，不會進入 `asdict`／設定或 `run.json`。
@@ -125,6 +126,7 @@ macOS 請使用含可用 Tkinter 的 Python；可先用 `python3 -m tkinter` 檢
 ..\.venv\Scripts\python.exe -m unittest -v test_mcs test_mcs_transport test_station test_fail_dates test_zip_bundle
 ..\.venv\Scripts\python.exe -m unittest -v test_html_report
 ..\.venv\Scripts\python.exe -m unittest -v test_result_folders
+..\.venv\Scripts\python.exe -m unittest -v test_image_collection
 ..\.venv\Scripts\python.exe -m unittest -v test_repeat_schedule test_gui_schedule
 node report_assets/test_report.cjs
 ..\.venv\Scripts\python.exe -m unittest -v test_gui_mcs

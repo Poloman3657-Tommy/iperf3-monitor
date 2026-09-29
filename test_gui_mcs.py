@@ -41,6 +41,8 @@ class GuiMcsTests(unittest.TestCase):
             self.assertIn('late station result', self.app.report_file.read_text(encoding='utf-8'))
             self.assertTrue(self.app.output.name.endswith('_LOW'))
             self.assertEqual(self.app.output,self.app.report_file.parent)
+            self.assertEqual(self.app.collected_image.name,self.app.output.name+'.png')
+            self.assertEqual(self.app.collected_image.read_bytes(),(self.app.output/'throughput.png').read_bytes())
             self.assertIn('late station result',(self.app.output/'mcs-events.jsonl').read_text(encoding='utf-8'))
 
     def test_close_waits_for_report_and_export_errors_are_visible(self):
@@ -73,6 +75,7 @@ class GuiMcsTests(unittest.TestCase):
         self.errors = []
         self.root.report_callback_exception = lambda kind, value, tb: self.errors.append(str(value))
         self.app = MonitorApp(self.root, settings_path=Path(self.folder.name) / 'config.json')
+        self.app.image_root = Path(self.folder.name)
 
     def tearDown(self):
         self.app.close()

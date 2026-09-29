@@ -132,6 +132,28 @@ Station 結果仍保存到 `mcs-events.jsonl` 以沿用原檔名。每行為一�
 
 狀態包含 `RUNNING`、`OK`、`NO_PEERS`、`ERROR`、`SKIPPED_BUSY`、`CANCELLED`。IP 留白不建立 SSH 紀錄檔，測速 CSV／JSON 的日期仍會保存。SSH 錯誤不改變吞吐量 PASS／LOW；查詢到的 Station 狀態可能晚於 fail。手動測試僅在設定視窗顯示結果。已通過本機模擬 SSH 與真正 Tk 測試，尚未對你的設備實測。
 
+## 圖檔彙整
+
+每輪保存結果時，程式會保留原本的 `throughput.png`，並複製一份到設定的結果根目錄下的 **`throughput-images`**。彙整圖檔使用該輪完整資料夾名稱加上 `.png`，包含 `_LOW` 標記。
+
+```text
+gui-results/
+  throughput-images/
+    20260929-120000-123456_LOW.png
+    20260929-121000-123456.png
+  20260929-120000-123456_LOW/
+    throughput.png
+    report.html
+  schedule-20260929-120900-123456/
+    20260929-121000-123456/
+      throughput.png
+      report.html
+```
+
+一般測試、持續模式停止後的結果，以及不同排程中的輪次，都使用同一個 `throughput-images`。若設定另一個結果根目錄，圖檔也會彙整到新根目錄。圖檔在 PNG 完成、Station 收尾與 `_LOW` 改名後才複製，畫面會顯示彙整圖檔的位置。
+
+已有同名圖檔時不覆寫。複製失敗會保留原圖與其他報告，畫面顯示「圖檔彙整失敗」，並嘗試在該輪資料夾寫入 `image-collection-error.txt`；HTML 仍可開啟，後續排程停止。這項功能自動處理新版執行的測試，不會在啟動時掃描舊報告。
+
 ## 低速資料夾標記
 
 每輪測試只要出現暖機後低速事件，結果資料夾就會加上 `_LOW`，例如：
@@ -164,10 +186,10 @@ gui-results/
 
 ## 檔案結構
 
-ZIP 與 SHA-256 檔名都包含版本號，例如 `iperf-monitor-windows-x64-v1.7.1.zip` 和 `iperf-monitor-windows-x64-v1.7.1.zip.sha256`。解壓縮的外層資料夾也會包含版本號，內部 EXE 保持原名。
+ZIP 與 SHA-256 檔名都包含版本號，例如 `iperf-monitor-windows-x64-v1.7.2.zip` 和 `iperf-monitor-windows-x64-v1.7.2.zip.sha256`。解壓縮的外層資料夾也會包含版本號，內部 EXE 保持原名。
 
 ```text
-IperfMonitor-v1.7.1/       以 v1.7.1 為例
+IperfMonitor-v1.7.2/       以 v1.7.2 為例
   IperfMonitor.exe        桌面程式
   config.json             預設／已儲存設定
   _internal/              Python、Tk 與繪圖執行環境

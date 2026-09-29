@@ -103,6 +103,10 @@ def check_package(report_path: str) -> int:
             raise RuntimeError(f'Unexpected measurement result: {outcome}')
         if (outcome.output / 'throughput.png').stat().st_size < 10000:
             raise RuntimeError('PNG report was not generated correctly')
+        archive = report.parent / 'run-data' / 'throughput-images'
+        expected_image = archive / (outcome.output.name + '.png')
+        if app.collected_image != expected_image or expected_image.read_bytes() != (outcome.output / 'throughput.png').read_bytes():
+            raise RuntimeError('Collected PNG differs from the retained original or has the wrong name')
         raw_log = (outcome.output / 'iperf.log').read_text(encoding='utf-8')
         if 'Mbits/sec' not in raw_log or 'Kbits/sec' in raw_log:
             raise RuntimeError('Desktop raw throughput output is not in Mbits/sec')
@@ -171,6 +175,9 @@ def check_package(report_path: str) -> int:
                 raise RuntimeError('Scheduled result folder does not match its low events')
             if metadata['output'] != str(metadata_path.parent):
                 raise RuntimeError('Scheduled run metadata has a stale result path')
+            image_path = archive / (metadata_path.parent.name + '.png')
+            if image_path.read_bytes() != (metadata_path.parent / 'throughput.png').read_bytes():
+                raise RuntimeError('Scheduled PNG was not collected into the shared root')
             if metadata.get('schedule_round') != index:
                 raise RuntimeError('Missing schedule round metadata')
             for filename in ('report.html', 'samples.csv', 'summary.json', 'throughput.png'):
@@ -183,7 +190,7 @@ def check_package(report_path: str) -> int:
                       chart_time_unit=restored.time_unit, curve_points=len(curve.get_xdata()),
                       navigation_verified=True, blank_ssh_verified=True, html_report_verified=True,
                       repeat_schedule_verified=True, repeat_rounds=len(rounds), schedule_output=str(schedule_output),
-                      low_folder_verified=True)
+                      low_folder_verified=True, image_collection_verified=True, image_collection=str(archive))
         return_code = 0
     except Exception:
         result['error'] = traceback.format_exc()

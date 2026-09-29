@@ -41,6 +41,7 @@ from mcs_dialog import SshDialog
 from html_report import save_report
 from repeat_schedule import RepeatSchedule
 from result_folders import mark_low_folder, update_run_path
+from image_collection import collect_image
 import monitor
 
 TIME_LABELS = {'自動': 'auto', '秒': 'seconds', '分': 'minutes', '時': 'hours', '天': 'days'}
@@ -67,6 +68,7 @@ class MonitorApp:
         self.output = None
         self.last_outcome = None
         self.report_worker = self.report_file = None
+        self.image_root = self.collected_image = None
         self.report_pending = False
         self.report_time_unit = 'auto'
         self.report_status = tk.StringVar(value='測試結束後自動保存互動 HTML 報告。')
@@ -382,6 +384,7 @@ class MonitorApp:
             self.status.set(str(exc))
             self.status_label.configure(foreground='#c6373e')
             return
+        self.image_root = config.output  # Preserve the user's root before creating a schedule subfolder.
         if config.total_minutes > 0:
             try:
                 folder = config.output / ('schedule-' + datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
@@ -406,6 +409,7 @@ class MonitorApp:
             self.schedule.begin_round(now)
         self.config, self.samples, self.output, self.last_outcome = config, [], None, None
         self.report_file = None
+        self.collected_image = None
         self.report_button.configure(state='disabled')
         self.report_status.set('測試結束後自動保存互動 HTML 報告。')
         self.dispatcher = None
@@ -516,13 +520,19 @@ class MonitorApp:
                 self._receive_mcs(value)
             elif kind == 'report':
                 self.report_worker = None
-                self.report_file, error, self.output = value
+                self.report_file, error, self.output, self.collected_image, image_error = value
                 self.path_status.set(f'保存位置：{self.output}')
                 self.folder_button.configure(state='normal' if self.output and self.output.is_dir() else 'disabled')
                 self.report_status.set(f'HTML 儲存失敗：{error}' if error else f'HTML 已保存：{self.report_file}')
+                if not error and image_error:
+                    self.report_status.set(f'HTML 已保存；圖檔彙整失敗：{image_error}')
+                elif not error and self.collected_image:
+                    self.report_status.set(f'HTML 已保存；彙整圖檔：{self.collected_image}')
                 self.report_button.configure(state='normal' if self.report_file else 'disabled')
                 if error:
                     self._end_schedule('HTML 存檔錯誤，已停止排程')
+                elif image_error:
+                    self._end_schedule('圖檔彙整錯誤，已停止排程')
             elif kind == 'finished':
                 self._finish(value)
                 changed = False
@@ -715,24 +725,34 @@ class MonitorApp:
             return
         self.report_pending = False
         outcome, unit, events = self.last_outcome, self.report_time_unit, self.events
+        image_root = self.image_root or outcome.config.output
         self.report_status.set('正在保存互動 HTML 報告…')
         self.folder_button.configure(state='disabled')
         def work():
+            image_path = image_error = None
             try:
                 # Collection, PNG and SSH are complete here; no writer holds an old path.
                 old_output = outcome.output
                 outcome.output = mark_low_folder(outcome.output, outcome.summary, outcome.config.output)
                 if outcome.output != old_output:
                     update_run_path(outcome.output)
+                try:
+                    image_path = collect_image(outcome.output, image_root)
+                except Exception as exc:
+                    image_error = str(exc)
+                    try:
+                        (outcome.output / 'image-collection-error.txt').write_text(image_error, encoding='utf-8')
+                    except OSError as save_error:
+                        image_error += f'；錯誤紀錄也無法寫入：{save_error}'
                 path = save_report(outcome.samples, outcome.summary, outcome.config, outcome.output, unit)
-                events.put(('report', (path, None, outcome.output)))
+                events.put(('report', (path, None, outcome.output, image_path, image_error)))
             except Exception as exc:
                 error = str(exc)
                 try:
                     (outcome.output / 'html-report-error.txt').write_text(error, encoding='utf-8')
                 except OSError as save_error:
                     error += f'；錯誤紀錄也無法寫入：{save_error}'
-                events.put(('report', (None, error, outcome.output)))
+                events.put(('report', (None, error, outcome.output, image_path, image_error)))
         self.report_worker = threading.Thread(target=work, daemon=False)
         self.report_worker.start()
 

@@ -9,7 +9,7 @@
 - `iperf-monitor-windows-x64-v<版本>.zip`：Windows x64 免安裝包。
 - `iperf-monitor-windows-x64-v<版本>.zip.sha256`：對應版本的 SHA-256 校驗碼。
 
-例如 v1.7.1 的檔名是 `iperf-monitor-windows-x64-v1.7.1.zip`，解壓縮後會建立 `IperfMonitor-v1.7.1` 資料夾。請從上方「最新 Release」選擇需要的版本；歷史版本也使用各自的版本號。
+例如 v1.7.2 的檔名是 `iperf-monitor-windows-x64-v1.7.2.zip`，解壓縮後會建立 `IperfMonitor-v1.7.2` 資料夾。請從上方「最新 Release」選擇需要的版本；歷史版本也使用各自的版本號。
 
 1. 將 ZIP **完整解壓縮**到可寫入的資料夾。
 2. 進入 `IperfMonitor-v<版本>` 資料夾，開啟 `IperfMonitor.exe`。
@@ -95,6 +95,8 @@ TCP 不設定發送速率上限。UDP 的目標速率是**每條連線**的值�
 UDP 丟包和 jitter 留在原始 log，這版 PASS／LOW 只判斷吞吐量。已驗證 Windows client 對 Linux server 的 UDP 多連線；包內 Cygwin iperf3 3.16 作為 Windows server 時，多條 UDP 連線可能失敗，該情況可使用單條連線或 Linux server。
 
 ## 結果檔案
+
+每輪結束後，原本的 `throughput.png` 會保留在該輪資料夾，另外複製到設定的結果根目錄下 **`throughput-images`**，檔名使用該輪最終資料夾名稱，例如 `20260929-120000-123456_LOW.png`。一般測試和不同排程的輪次都集中在此資料夾，方便逐張查看與分享。若有同名圖檔，會報錯而不覆寫；彙整失敗不影響已保存的 HTML／CSV／原圖，但會停止後續排程並留下錯誤提示。
 
 有低速事件的該輪資料夾會自動加上 **`_LOW`**，例如 `20260922-170028-123456_LOW`，方便在檔案總管辨識。以暖機後實際低速事件為準；即使手動停止、排程到期或測試錯誤，只要曾出現低速仍會標記。沒有低速事件則維持原名。
 
