@@ -15,6 +15,7 @@ import threading
 import time
 import tkinter as tk
 from tkinter import filedialog, ttk
+from tkinter import font as tkfont
 
 try:
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -42,9 +43,18 @@ from html_report import save_report
 from repeat_schedule import RepeatSchedule
 from result_folders import mark_low_folder, update_run_path
 from image_collection import collect_image
+from window_layout import fit_window, ScrollableForm
 import monitor
 
 TIME_LABELS = {'自動': 'auto', '秒': 'seconds', '分': 'minutes', '時': 'hours', '天': 'days'}
+
+class PlotCanvas(FigureCanvasTkAgg):
+    def resize(self, event):
+        # Tk emits transient 1-pixel sizes while rebuilding a small-window layout.
+        # Keep the last usable figure until the scrollable panel has settled.
+        if event.width >= 240 and event.height >= 180:
+            super().resize(event)
+
 
 class MonitorApp:
     """Own every Tk/Matplotlib operation on the main thread; workers only enqueue data."""
@@ -113,8 +123,7 @@ class MonitorApp:
 
     def _build(self):
         self.root.title('iperf3 即時速率監測')
-        self.root.geometry('1160x840')
-        self.root.minsize(980, 740)
+        fit_window(self.root)
         style = ttk.Style(self.root)
         if 'clam' in style.theme_names():
             style.theme_use('clam')
@@ -122,29 +131,47 @@ class MonitorApp:
         style.configure('TLabel', background='#f3f6fa', foreground='#182a3c')
         style.configure('Header.TLabel', font=('TkDefaultFont', 19, 'bold'))
         style.configure('Metric.TLabel', font=('TkDefaultFont', 17, 'bold'))
+        style.configure('SmallMetric.TLabel', font=('TkDefaultFont', 14, 'bold'))
         style.configure('Start.TButton', padding=(18, 9), font=('TkDefaultFont', 11, 'bold'))
         style.configure('TButton', padding=(9, 5))
-        outer = ttk.Frame(self.root, padding=18)
+        style.configure('Treeview', rowheight=max(20,tkfont.nametofont('TkDefaultFont',root=self.root).metrics('linespace')+4))
+        outer = ttk.Frame(self.root, padding=12)
         outer.pack(fill='both', expand=True)
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(1, weight=1)
         header = ttk.Frame(outer)
-        header.pack(fill='x', pady=(0, 14))
-        ttk.Label(header, text='iperf3 即時速率監測', style='Header.TLabel').pack(side='left')
-        self.stop_button = ttk.Button(header, text='停止', command=self.stop, state='disabled')
+        header.grid(row=0, column=0, sticky='ew', pady=(0, 8))
+        header.columnconfigure(0, weight=1)
+        header_title = ttk.Label(header, text='iperf3 即時速率監測', style='Header.TLabel')
+        header_title.grid(row=0, column=0, sticky='w')
+        header_buttons = ttk.Frame(header)
+        header_buttons.grid(row=0, column=1, sticky='e')
+        def resize_header(event):
+            narrow = event.width < header_title.winfo_reqwidth()+header_buttons.winfo_reqwidth()+24
+            header_buttons.grid(row=1 if narrow else 0, column=0 if narrow else 1,
+                                columnspan=2 if narrow else 1, sticky='e', pady=(5, 0) if narrow else 0)
+        header.bind('<Configure>', resize_header)
+        self.stop_button = ttk.Button(header_buttons, text='停止', command=self.stop, state='disabled')
         self.stop_button.pack(side='right', padx=(8, 0))
-        self.start_button = ttk.Button(header, text='開始測速', command=self.start, style='Start.TButton')
+        self.start_button = ttk.Button(header_buttons, text='開始測速', command=self.start, style='Start.TButton')
         self.start_button.pack(side='right')
-        self.save_button = ttk.Button(header, text='儲存設定', command=self.save_settings)
+        self.save_button = ttk.Button(header_buttons, text='儲存設定', command=self.save_settings)
         self.save_button.pack(side='right', padx=(0, 8))
         self.controls.append((self.save_button, 'normal'))
-        self.ssh_button = ttk.Button(header, text='SSH / Station 設定', command=self.edit_ssh)
+        self.ssh_button = ttk.Button(header_buttons, text='SSH / Station 設定', command=self.edit_ssh)
         self.ssh_button.pack(side='right', padx=(0, 8))
         self.controls.append((self.ssh_button, 'normal'))
         body = ttk.Frame(outer)
-        body.pack(fill='both', expand=True)
+        body.grid(row=1, column=0, sticky='nsew')
         body.columnconfigure(1, weight=1)
         body.rowconfigure(0, weight=1)
-        form = ttk.Frame(body, padding=(0, 0, 18, 0))
-        form.grid(row=0, column=0, sticky='nsw')
+        self.form_scroll = ScrollableForm(body)
+        self.form_scroll.grid(row=0, column=0, sticky='nsew', padx=(0, 10))
+        form = self.form_scroll.form
+        def resize_body(event):
+            width = min(form.winfo_reqwidth(), max(180, int(event.width*.38)))
+            self.form_scroll.canvas.configure(width=width)
+        body.bind('<Configure>', resize_body)
         form.columnconfigure(0, weight=1)
         ttk.Label(form, text=f'執行環境：{platform.system()}（自動偵測）').grid(row=0, column=0, sticky='w', pady=(0, 9))
         rows = [('server', 'Server IP'), ('port', 'Port'), ('duration', '測試秒數（0＝持續）'),
@@ -195,19 +222,40 @@ class MonitorApp:
         self.report_button = ttk.Button(form, text='開啟 HTML 報告', command=self.open_report, state='disabled')
         self.report_button.grid(row=17, column=0, sticky='ew', pady=(6, 0))
 
-        right = ttk.Frame(body)
-        right.grid(row=0, column=1, sticky='nsew')
+        self.right_scroll = ScrollableForm(body, stretch_height=True)
+        self.right_scroll.grid(row=0, column=1, sticky='nsew')
+        right = self.right_scroll.form
         metric_row = ttk.Frame(right)
         metric_row.pack(fill='x', pady=(0, 8))
+        self.metric_cards = []
+        metric_values = []
         for key, title in [('current', '目前 Mbps'), ('minimum', '暖機後最低 Mbps'),
                            ('average', '暖機後平均 Mbps'), ('low', '低速累計秒數')]:
             card = ttk.Frame(metric_row, padding=(8, 6))
-            card.pack(side='left', fill='x', expand=True)
+            card.grid(row=0, column=len(self.metric_cards), sticky='ew')
+            self.metric_cards.append(card)
             ttk.Label(card, text=title).pack(anchor='w')
-            ttk.Label(card, textvariable=self.metrics[key], style='Metric.TLabel').pack(anchor='w')
+            value = ttk.Label(card, textvariable=self.metrics[key], style='Metric.TLabel')
+            value.pack(anchor='w')
+            metric_values.append(value)
+        metric_columns = None
+        def resize_metrics(event):
+            nonlocal metric_columns
+            columns = 4 if event.width >= 700 else 2
+            if columns == metric_columns:
+                return
+            metric_columns = columns
+            for i in range(4):
+                metric_row.columnconfigure(i, weight=1 if i<columns else 0,
+                                           uniform='metrics' if i<columns else '')
+                self.metric_cards[i].grid(row=i//columns, column=i%columns)
+                metric_values[i].configure(style='Metric.TLabel' if columns==4 else 'SmallMetric.TLabel')
+        metric_row.bind('<Configure>', resize_metrics)
         tabs = ttk.Notebook(right)
         tabs.pack(fill='both', expand=True)
         chart_tab, log_tab = ttk.Frame(tabs), ttk.Frame(tabs)
+        chart_tab.columnconfigure(0, weight=1)
+        chart_tab.rowconfigure(2, weight=1)
         tabs.add(chart_tab, text='即時曲線與低速事件')
         tabs.add(log_tab, text='iperf3 原始輸出')
         mcs_tab = ttk.Frame(tabs)
@@ -219,34 +267,35 @@ class MonitorApp:
         mcs_scroll.pack(side='right', fill='y')
         self.mcs_detail.pack(fill='both', expand=True)
         chart_options = ttk.Frame(chart_tab, padding=(6, 5))
-        chart_options.pack(fill='x')
+        chart_options.grid(row=0, column=0, sticky='ew')
         ttk.Label(chart_options, text='時間單位').pack(side='left')
         # Display-only control remains available during a measurement.
         self.time_unit_combo = ttk.Combobox(chart_options, textvariable=self.vars['time_unit'],
                                            values=list(TIME_LABELS), width=7, state='readonly')
         self.time_unit_combo.pack(side='left', padx=(8, 12))
-        ttk.Label(chart_options, text='滾輪縮放、左鍵拖移；點選低速事件可定位。').pack(side='left')
+        ttk.Label(chart_options, text='滾輪縮放 · 左鍵拖移', width=1).pack(side='left', fill='x', expand=True)
         navigation = ttk.Frame(chart_tab, padding=(6, 2))
-        navigation.pack(fill='x')
+        navigation.grid(row=1, column=0, sticky='ew')
         ttk.Button(navigation, text='＋', width=3, command=lambda: self.zoom_view(.5)).pack(side='left')
         ttk.Button(navigation, text='－', width=3, command=lambda: self.zoom_view(2)).pack(side='left', padx=3)
         self.all_button = ttk.Button(navigation, text='顯示全部', command=self.show_all)
         self.all_button.pack(side='left', padx=3)
         self.follow_button = ttk.Button(navigation, text='跟隨最新', command=self.follow_latest)
         self.follow_button.pack(side='left', padx=3)
-        ttk.Label(navigation, textvariable=self.view_status).pack(side='left', padx=5)
+        ttk.Label(navigation, textvariable=self.view_status, width=1).pack(side='left', fill='x', expand=True, padx=5)
         self.figure = Figure(figsize=(8, 4.4), dpi=100, layout='constrained')
         self.ax = self.figure.subplots()
-        self.canvas = FigureCanvasTkAgg(self.figure, master=chart_tab)
-        self.canvas.get_tk_widget().pack(fill='both', expand=True)
+        self.canvas = PlotCanvas(self.figure, master=chart_tab)
+        self.canvas.get_tk_widget().configure(width=320,height=300)
+        self.canvas.get_tk_widget().grid(row=2, column=0, sticky='nsew')
         self.canvas.mpl_connect('scroll_event', self._on_wheel)
         self.canvas.mpl_connect('button_press_event', self._on_drag_start)
         self.canvas.mpl_connect('motion_notify_event', self._on_drag_move)
         self.canvas.mpl_connect('button_release_event', self._on_drag_end)
         self.timeline_scroll = ttk.Scrollbar(chart_tab, orient='horizontal', command=self._on_timeline_scroll)
-        self.timeline_scroll.pack(fill='x', padx=6, pady=(1, 4))
+        self.timeline_scroll.grid(row=3, column=0, sticky='ew', padx=6, pady=(1, 4))
         event_box = ttk.Frame(chart_tab)
-        event_box.pack(fill='x', padx=5)
+        event_box.grid(row=4, column=0, sticky='ew', padx=5)
         self.tree = ttk.Treeview(event_box, columns=('date', 'start', 'end', 'seconds', 'minimum', 'mcs'), show='headings', height=5, selectmode='browse')
         self.tree.heading('date', text='Fail 偵測日期時間（本機）')
         self.tree.column('date', width=240, minwidth=230)
@@ -261,22 +310,39 @@ class MonitorApp:
         self.tree.pack(side='left', fill='x', expand=True)
         event_horizontal = ttk.Scrollbar(chart_tab, orient='horizontal', command=self.tree.xview)
         self.tree.configure(xscrollcommand=event_horizontal.set)
-        event_horizontal.pack(fill='x', padx=5)
+        event_horizontal.grid(row=5, column=0, sticky='ew', padx=5)
         self.tree.bind('<<TreeviewSelect>>', self._on_event_selected)
         self.tree.bind('<ButtonRelease-1>', self._on_event_clicked)
-        ttk.Label(chart_tab, textvariable=self.event_caption).pack(anchor='w', padx=5, pady=4)
+        event_label = ttk.Label(chart_tab, textvariable=self.event_caption, width=1)
+        event_label.grid(row=6, column=0, sticky='ew', padx=5, pady=4)
+        def resize_chart(event):
+            count = 1 if event.height < 340 else 2 if event.height < 500 else 5
+            if int(self.tree.cget('height')) != count:
+                self.tree.configure(height=count)
+        chart_tab.bind('<Configure>', resize_chart)
         self.log = tk.Text(log_tab, wrap='none', state='disabled', height=18)
         scroll = ttk.Scrollbar(log_tab, orient='vertical', command=self.log.yview)
         self.log.configure(yscrollcommand=scroll.set)
         scroll.pack(side='right', fill='y')
         self.log.pack(fill='both', expand=True)
-        self.progress = ttk.Progressbar(outer, mode='determinate')
-        self.progress.pack(fill='x', pady=(12, 5))
-        self.status_label = ttk.Label(outer, textvariable=self.status, wraplength=1050)
-        self.status_label.pack(fill='x')
-        ttk.Label(outer, textvariable=self.schedule_status, wraplength=1050).pack(fill='x', pady=(3, 0))
-        ttk.Label(outer, textvariable=self.path_status, wraplength=1050).pack(fill='x', pady=(3, 0))
-        ttk.Label(outer, textvariable=self.report_status, wraplength=1050).pack(fill='x', pady=(3, 0))
+        footer = ttk.Frame(outer)
+        footer.grid(row=2, column=0, sticky='ew')
+        self.progress = ttk.Progressbar(footer, mode='determinate')
+        self.progress.pack(fill='x', pady=(8, 4))
+        # One line per status always fits vertically. Long paths can be selected,
+        # copied or scrolled horizontally without expanding the footer's height.
+        self.footer_labels = []
+        for variable in (self.status, self.schedule_status, self.path_status, self.report_status):
+            entry = tk.Entry(footer, textvariable=variable, state='readonly', width=1,
+                             readonlybackground='#f3f6fa', foreground='#182a3c', font='TkDefaultFont',
+                             relief='flat', borderwidth=0, highlightthickness=0)
+            entry.pack(fill='x', pady=1)
+            def select_all(event):
+                event.widget.selection_range(0, 'end')
+                return 'break'
+            entry.bind('<Control-a>', select_all)
+            self.footer_labels.append(entry)
+        self.status_label = self.footer_labels[0]
         self._draw()
 
     def _pick_iperf(self):

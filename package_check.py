@@ -55,6 +55,26 @@ def check_package(report_path: str) -> int:
         root.report_callback_exception = lambda kind, value, tb: errors.append(str(value))
         preferences = report.parent / 'package-test-config.json'
         app = MonitorApp(root, settings_path=preferences)
+        # Mapping is required for actual Tk bounds; keep the diagnostic invisible
+        # and non-interactive while verifying the low-resolution layout.
+        root.attributes('-alpha', 0)
+        if sys.platform == 'win32':
+            root.attributes('-disabled', True)
+        root.geometry('960x600')
+        root.deiconify()
+        root.update()
+        if root.winfo_height() > 600:
+            raise RuntimeError('Minimum window height prevents a low-resolution layout')
+        for entry in app.footer_labels:
+            if (entry.winfo_height() < entry.winfo_reqheight() or
+                    entry.winfo_rooty()+entry.winfo_height() > root.winfo_rooty()+root.winfo_height()):
+                raise RuntimeError('Status footer is clipped at 960x600')
+        app.form_scroll.canvas.yview_moveto(1)
+        root.update()
+        if (app.report_button.winfo_rooty()+app.report_button.winfo_height() >
+                app.form_scroll.canvas.winfo_rooty()+app.form_scroll.canvas.winfo_height()):
+            raise RuntimeError('Settings panel cannot scroll to its bottom buttons')
+        app.form_scroll.canvas.yview_moveto(0)
         # Even enabled=true must never connect when the optional IP is blank.
         app.ssh_settings = SshSettings(enabled=True, host='')
         app.ssh_password = 'package-check-runtime-only'
@@ -190,7 +210,8 @@ def check_package(report_path: str) -> int:
                       chart_time_unit=restored.time_unit, curve_points=len(curve.get_xdata()),
                       navigation_verified=True, blank_ssh_verified=True, html_report_verified=True,
                       repeat_schedule_verified=True, repeat_rounds=len(rounds), schedule_output=str(schedule_output),
-                      low_folder_verified=True, image_collection_verified=True, image_collection=str(archive))
+                      low_folder_verified=True, image_collection_verified=True, image_collection=str(archive),
+                      small_window_verified=True)
         return_code = 0
     except Exception:
         result['error'] = traceback.format_exc()

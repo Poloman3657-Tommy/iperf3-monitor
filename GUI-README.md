@@ -2,7 +2,7 @@
 
 **Windows 不想安裝相依套件：** 到 [最新 Release](https://github.com/Poloman3657-Tommy/iperf3-monitor/releases/latest) 下載帶版本號的 Windows x64 免安裝 ZIP，完整解壓縮後進入對應版本資料夾，開啟 `IperfMonitor.exe`。包內已含 Python、Tk、Matplotlib 與 iperf3；不需 pip。詳細步驟見 [Windows 說明](Windows-README.md)。以下是 Python 原始碼版的使用與開發方式。
 
-Windows 打包時必須指定版本，例如 `python zip_windows_bundle.py --version v1.7.2`。輸出 ZIP、SHA-256 和外層資料夾會使用相同版本號；若同版本檔案已存在，工具會拒絕覆寫。
+Windows 打包時必須指定版本，例如 `python zip_windows_bundle.py --version v1.7.3`。輸出 ZIP、SHA-256 和外層資料夾會使用相同版本號；若同版本檔案已存在，工具會拒絕覆寫。
 
 按「開始測速」會**直接啟動本機 iperf3**，每秒更新速率曲線及低速事件；不需要 HTML、下載測試腳本或手動匯入 log。
 
@@ -106,6 +106,7 @@ macOS 請使用含可用 Tkinter 的 Python；可先用 `python3 -m tkinter` 檢
 ## 技術結構與驗證
 
 - `gui.py`：Tk 表單、即時曲線、事件佇列及主視窗生命週期。
+- `window_layout.py`：Windows 工作區與初始視窗定位、可捲動內容面板，以及限定作用範圍的滾輪／焦點處理；不改變系統 DPI 模式。
 - `gui_runner.py`：不可變設定、路徑驗證、背景測速；不呼叫 Tk。
 - `repeat_schedule.py`：以 monotonic 時鐘計算測完後等待、輪次與固定總截止時間。總排程 0 保留單次模式；duration 0 正規化排程欄位為 0。
 - `result_folders.py`：所有寫入者完成後，依實際低速事件為每輪資料夾加上 `_LOW`，檢查來源／目的父目錄及名稱衝突，原子更新 `run.json` 路徑。
@@ -127,6 +128,7 @@ macOS 請使用含可用 Tkinter 的 Python；可先用 `python3 -m tkinter` 檢
 ..\.venv\Scripts\python.exe -m unittest -v test_html_report
 ..\.venv\Scripts\python.exe -m unittest -v test_result_folders
 ..\.venv\Scripts\python.exe -m unittest -v test_image_collection
+..\.venv\Scripts\python.exe -m unittest -v test_window_layout
 ..\.venv\Scripts\python.exe -m unittest -v test_repeat_schedule test_gui_schedule
 node report_assets/test_report.cjs
 ..\.venv\Scripts\python.exe -m unittest -v test_gui_mcs
@@ -151,3 +153,5 @@ HTML 匯出在 GUI 收到 finished 之後，等 Station worker 結束才啟動�
 瀏覽器驗證可執行 `python report_assets/create_fixture.py` 建立人工資料，再以 `python -m http.server 8767 --bind 127.0.0.1 --directory validation/html-report` 提供測試頁。使用 Playwright CLI 開啟 `http://127.0.0.1:8767/report.html` 並取得 snapshot，接著 `run-code --filename report_assets/test_browser.js`；此檢查會將瀏覽器切為離線，測試時間單位、鍵盤焦點、滾輪、拖移、水平捲軸、173 次事件分頁定位與資料完整性。完成後關閉專用瀏覽器工作階段與本機測試伺服器。
 
 重測時 GUI 使用不可變的同一組參數，每輪建立新輸出／佇列／SSH dispatcher。下一輪需等待測完間隔和 HTML／SSH 收尾均完成；`monitor.collect(stop_at=...)` 在 worker 獨立執行總時間截止，不依賴 Tk 重畫是否及時。到期會 kill 自己的子程序、排空已收到輸出，保留 `INTERRUPTED` 與排程截止原因。單元測試涵蓋沉默子程序截止、禁止到期後啟動、設定相容；Tk 測試涵蓋重跑／保存順序、等待期間停止、錯誤終止與 0 秒欄位停用。
+
+版面測試以完全透明、停用原生輸入的映射視窗取得實際幾何資訊（withdrawn 視窗不會完整配置外層元件），涵蓋低解析度及放大字型。底部改用固定四行 readonly Entry 保留完整字串及複製功能；中間只有內容區取得剩餘高度。PlotCanvas 忽略 Tk 重排時暫時極小的 Configure，避免座標軸在不穩定尺寸下計算。GUI 字串與測速資料流程不變；打包診斷另驗證 960×600 狀態列及設定區末端按鈕。
